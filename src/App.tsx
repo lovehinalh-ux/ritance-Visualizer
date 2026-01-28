@@ -164,24 +164,29 @@ interface HeirCardProps {
   legalShare: number;
   totalEstate: number;
   isHeir: boolean;
+  hasAllocationStarted: boolean;
 }
 
 
-const HeirCard: FC<HeirCardProps> = ({ heir, assets, onDrop, onDragOver, onDragStart, legalShare, totalEstate, isHeir }) => {
+const HeirCard: FC<HeirCardProps> = ({ heir, assets, onDrop, onDragOver, onDragStart, legalShare, totalEstate, isHeir, hasAllocationStarted }) => {
   // Only count assets assigned strictly to the heir (ignore extended family)
   const totalReceived = assets
     .filter(a => a.location === heir.id)
     .reduce((sum, a) => sum + a.amount, 0);
   const expectedAmount = totalEstate * legalShare;
   const reservedAmount = expectedAmount / 2;
-  const isUnderReserved = isHeir && totalReceived < reservedAmount && totalReceived > 0;
+  const isUnderReserved = isHeir && hasAllocationStarted && totalReceived < reservedAmount;
+
+  // 調整尺寸邏輯：父母與兄弟姊妹縮小為 6/7
+  const isCompact = ['parent', 'sibling'].includes(heir.relation || '');
 
   const mainContent = (
     <div
       onDrop={(e) => onDrop(e, heir.id)}
       onDragOver={onDragOver}
       className={`
-        relative rounded-xl p-4 transition-all duration-200 min-w-[180px]
+        relative rounded-xl transition-all duration-200
+        ${isCompact ? 'p-3 min-w-[150px]' : 'p-4 min-w-[180px]'}
         ${!isHeir ? 'opacity-50 bg-gray-100 border-2 border-gray-200' :
           isUnderReserved ? 'bg-red-50 border-2 border-red-300 shadow-md' :
             'bg-white border-2 border-[#6F8F7B] shadow-md hover:shadow-lg'}
@@ -196,11 +201,12 @@ const HeirCard: FC<HeirCardProps> = ({ heir, assets, onDrop, onDragOver, onDragS
 
       {/* 頭像與名稱 */}
       <div className="flex flex-col items-center mb-3">
-        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl bg-gray-50`}>
-          <Icons.Person gender={heir.gender} className="w-10 h-10" />
+        <div className={`rounded-full flex items-center justify-center text-2xl bg-gray-50
+          ${isCompact ? 'w-10 h-10' : 'w-12 h-12'}`}>
+          <Icons.Person gender={heir.gender} className={isCompact ? 'w-8 h-8' : 'w-10 h-10'} />
         </div>
         <span className="mt-2 font-semibold text-gray-700">{heir.name}</span>
-        <span className="text-xs text-gray-400 mb-1">{heir.relationLabel}</span>
+
       </div>
 
       {/* 應繼分資訊 */}
@@ -213,7 +219,8 @@ const HeirCard: FC<HeirCardProps> = ({ heir, assets, onDrop, onDragOver, onDragS
 
       {/* 資產放置區 */}
       <div className={`
-        min-h-[80px] border-2 border-dashed rounded-lg p-2 transition-colors
+        border-2 border-dashed rounded-lg p-2 transition-colors
+        ${isCompact ? 'min-h-[70px]' : 'min-h-[80px]'}
         ${isHeir ? 'border-[#6F8F7B]/30 bg-[#E9F1EC]' : 'border-gray-200 bg-gray-50'}
       `}>
         {assets.length === 0 ? (
@@ -1147,375 +1154,385 @@ export default function InheritanceVisualizer() {
           </div>
         ) : (
           /* ============ Step 2: 資產分配 ============ */
-          <div className="space-y-6">
-            {/* 返回按鈕 */}
-            <button
-              onClick={() => setStep('FAMILY')}
-              className="flex items-center gap-2 text-amber-700 hover:text-amber-900 transition-colors"
-            >
-              <Icons.ArrowLeft />
-              <span>返回修改家庭資料</span>
-            </button>
+          (() => {
+            // Check if allocation has started (any asset moved out of pool)
+            const hasAllocationStarted = assets.some(a => a.location !== 'pool');
 
-            {/* 稅務試算工具 (EstateMap 整合) */}
-            <EstateTaxPanel
-              totalEstate={totalEstate}
-              family={family}
-              onCalculatedChange={(total, tax) => {
-                setCalcTotal(total);
-                setCalcTax(tax);
-              }}
-            />
+            return (
+              <div className="space-y-6">
+                {/* 返回按鈕 */}
+                <button
+                  onClick={() => setStep('FAMILY')}
+                  className="flex items-center gap-2 text-amber-700 hover:text-amber-900 transition-colors"
+                >
+                  <Icons.ArrowLeft />
+                  <span>返回修改家庭資料</span>
+                </button>
 
-            {/* 總覽卡片 */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-white rounded-xl p-4 shadow-sm border border-border">
-                <div className="text-sm text-muted mb-1">遺產總額</div>
-                <div className="text-2xl font-bold text-secondary">{formatMoney(calcTotal || totalEstate)}</div>
-              </div>
-              <div className="bg-white rounded-xl p-4 shadow-sm border border-red-100">
-                <div className="text-sm text-gray-500 mb-1">遺產稅（估算）</div>
-                <div className="text-2xl font-bold text-red-500">-{formatMoney(calcTax)}</div>
-              </div>
-            </div>
+                {/* 稅務試算工具 (EstateMap 整合) */}
+                <EstateTaxPanel
+                  totalEstate={totalEstate}
+                  family={family}
+                  onCalculatedChange={(total, tax) => {
+                    setCalcTotal(total);
+                    setCalcTax(tax);
+                  }}
+                />
 
-            {/* 繼承系統表 + 資產分配 */}
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-border">
-              <div className="text-center mb-6">
-                <h2 className="text-lg font-bold text-secondary mb-2">👨👩👧👦 繼承系統表</h2>
-                <p className="text-sm text-muted">綠框為有繼承權者，將下方資產拖拉到繼承人卡片上進行分配</p>
-              </div>
-
-              {/* 父母要在被繼承人的上方 */}
-              <div className="flex flex-col items-center">
-                {/* 第一層：父母 */}
-                <div className="flex flex-wrap justify-center gap-4 mb-2">
-                  {heirs.filter(h => h.relation === 'parent').map((heir) => (
-                    <HeirCard
-                      key={heir.id}
-                      heir={heir}
-                      assets={assets.filter(a => a.location === heir.id)}
-                      onDrop={handleDrop}
-                      onDragOver={handleDragOver}
-                      onDragStart={handleDragStart}
-                      legalShare={heir.legalShare}
-                      totalEstate={afterTaxEstate}
-                      isHeir={heir.isHeir}
-                    />
-                  ))}
+                {/* 總覽卡片 */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-white rounded-xl p-4 shadow-sm border border-border">
+                    <div className="text-sm text-muted mb-1">遺產總額</div>
+                    <div className="text-2xl font-bold text-secondary">{formatMoney(calcTotal || totalEstate)}</div>
+                  </div>
+                  <div className="bg-white rounded-xl p-4 shadow-sm border border-red-100">
+                    <div className="text-sm text-gray-500 mb-1">遺產稅（估算）</div>
+                    <div className="text-2xl font-bold text-red-500">-{formatMoney(calcTax)}</div>
+                  </div>
                 </div>
 
-                {/* 連接線 (父母到自己) */}
-                {heirs.some(h => h.relation === 'parent') && (
-                  <div className="w-0.5 h-6 bg-gray-300 mb-2"></div>
-                )}
+                {/* 繼承系統表 + 資產分配 */}
+                {/* 繼承系統表 + 資產分配 */}
+                <div className="bg-white rounded-xl p-6 shadow-sm border border-border">
+                  <div className="text-center mb-6">
+                    <h2 className="text-lg font-bold text-secondary mb-2">👨👩👧👦 繼承系統表</h2>
+                    <p className="text-sm text-muted">綠框為有繼承權者，將下方資產拖拉到繼承人卡片上進行分配</p>
+                  </div>
 
-                {/* 第二層：兄弟姊妹 (左) - 被繼承人 (中) - 配偶 (右) */}
-                <div className="grid grid-cols-[1fr_auto_1fr] gap-16 items-start w-full mb-6 relative px-4">
+                  {/* 父母要在被繼承人的上方 */}
+                  <div className="flex flex-col items-center">
+                    {/* 第一層：父母 */}
+                    <div className="flex flex-wrap justify-center gap-4 mb-2">
+                      {heirs.filter(h => h.relation === 'parent').map((heir) => (
+                        <HeirCard
+                          key={heir.id}
+                          heir={heir}
+                          assets={assets.filter(a => a.location === heir.id)}
+                          onDrop={handleDrop}
+                          onDragOver={handleDragOver}
+                          onDragStart={handleDragStart}
+                          legalShare={heir.legalShare}
+                          totalEstate={afterTaxEstate}
+                          isHeir={heir.isHeir}
+                          hasAllocationStarted={hasAllocationStarted}
+                        />
+                      ))}
+                    </div>
 
-                  {/* 左側：兄弟姊妹 (若有) */}
-                  <div className="flex justify-end h-full">
-                    {heirs.some(h => h.relation === 'sibling') && (
-                      <div className="flex flex-col items-end gap-2 relative mt-4">
-                        {/* 連接線到被繼承人 (gap-16 is 64px) */}
-                        <div className="absolute right-[-64px] top-[100px] w-16 h-0.5 bg-gray-300"></div>
+                    {/* 連接線 (父母到自己) */}
+                    {heirs.some(h => h.relation === 'parent') && (
+                      <div className="w-0.5 h-6 bg-gray-300 mb-2"></div>
+                    )}
 
-                        <div className="flex flex-wrap justify-end gap-4 max-w-[400px]">
-                          {heirs.filter(h => h.relation === 'sibling').map((heir) => (
-                            <HeirCard
-                              key={heir.id}
-                              heir={heir}
-                              assets={assets.filter(a => a.location === heir.id)}
-                              onDrop={handleDrop}
-                              onDragOver={handleDragOver}
-                              onDragStart={handleDragStart}
-                              legalShare={heir.legalShare}
-                              totalEstate={afterTaxEstate}
-                              isHeir={heir.isHeir}
-                            />
-                          ))}
-                        </div>
-                        {!heirs.some(h => h.relation === 'child') && !heirs.some(h => h.relation === 'parent') && (
-                          <div className="text-xs text-muted italic pr-2">啟動第 3 順位</div>
+                    {/* 第二層：兄弟姊妹 (左) - 被繼承人 (中) - 配偶 (右) */}
+                    <div className="grid grid-cols-[1fr_auto_1fr] gap-16 items-start w-full mb-6 relative px-4">
+
+                      {/* 左側：兄弟姊妹 (若有) */}
+                      <div className="flex justify-end h-full">
+                        {heirs.some(h => h.relation === 'sibling') && (
+                          <div className="flex flex-col items-end gap-2 relative mt-4">
+                            {/* 連接線到被繼承人 (gap-16 is 64px) */}
+                            <div className="absolute right-[-64px] top-[100px] w-16 h-0.5 bg-gray-300"></div>
+
+                            <div className="flex flex-wrap justify-end gap-4 max-w-[400px]">
+                              {heirs.filter(h => h.relation === 'sibling').map((heir) => (
+                                <HeirCard
+                                  key={heir.id}
+                                  heir={heir}
+                                  assets={assets.filter(a => a.location === heir.id)}
+                                  onDrop={handleDrop}
+                                  onDragOver={handleDragOver}
+                                  onDragStart={handleDragStart}
+                                  legalShare={heir.legalShare}
+                                  totalEstate={afterTaxEstate}
+                                  isHeir={heir.isHeir}
+                                  hasAllocationStarted={hasAllocationStarted}
+                                />
+                              ))}
+                            </div>
+                            {!heirs.some(h => h.relation === 'child') && !heirs.some(h => h.relation === 'parent') && (
+                              <div className="text-xs text-muted italic pr-2">啟動第 3 順位</div>
+                            )}
+                          </div>
                         )}
                       </div>
-                    )}
-                  </div>
 
-                  {/* 中間：被繼承人 (Anchor) */}
-                  <div className="relative z-10 flex flex-col items-center">
-                    <div className="bg-[#FBF2E6] border-2 border-[#D9A15B] rounded-xl p-4 text-center min-w-[180px] min-h-[220px] shadow-sm flex flex-col items-center">
-                      <div className="mb-4">
-                        <div className="w-12 h-12 rounded-full flex items-center justify-center text-2xl bg-white shadow-inner mb-3">
-                          <Icons.Person gender={family.self.gender} className="w-10 h-10" />
+                      {/* 中間：被繼承人 (Anchor) */}
+                      <div className="relative z-10 flex flex-col items-center">
+                        <div className="bg-[#FBF2E6] border-2 border-[#D9A15B] rounded-xl p-4 text-center min-w-[180px] min-h-[220px] shadow-sm flex flex-col items-center">
+                          <div className="mb-4 flex flex-col items-center">
+                            <div className="w-12 h-12 rounded-full flex items-center justify-center text-2xl bg-white shadow-inner mb-3">
+                              <Icons.Person gender={family.self.gender} className="w-10 h-10" />
+                            </div>
+                            <div className="font-bold text-[#4A3B32] text-lg mb-1">{family.self.name}</div>
+                            <div className="text-xs text-[#D9A15B] font-bold px-2 py-0.5 bg-white rounded-full inline-block border border-[#D9A15B]/20">被繼承人</div>
+                          </div>
+
+                          {/* Placeholder to match HeirCard's Asset Area height */}
+                          <div className="flex-1 w-full mt-2 border-2 border-dashed border-[#D9A15B]/20 rounded-lg bg-white/50 flex flex-col items-center justify-center p-2">
+                            <div className="text-[10px] text-[#D9A15B]/60 font-medium">遺產總額</div>
+                            <div className="text-xs font-bold text-[#4A3B32]">{formatMoney(totalEstate)}</div>
+                          </div>
                         </div>
-                        <div className="font-bold text-[#4A3B32] text-lg mb-1">{family.self.name}</div>
-                        <div className="text-xs text-[#D9A15B] font-bold px-2 py-0.5 bg-white rounded-full inline-block border border-[#D9A15B]/20">被繼承人</div>
                       </div>
 
-                      {/* Placeholder to match HeirCard's Asset Area height */}
-                      <div className="flex-1 w-full mt-2 border-2 border-dashed border-[#D9A15B]/20 rounded-lg bg-white/50 flex flex-col items-center justify-center p-2">
-                        <div className="text-[10px] text-[#D9A15B]/60 font-medium">遺產總額</div>
-                        <div className="text-xs font-bold text-[#4A3B32]">{formatMoney(totalEstate)}</div>
+                      {/* 右側：配偶 (若有) */}
+                      <div className="flex justify-start h-full">
+                        {heirs.some(h => h.relation === 'spouse') && (
+                          <div className="relative mt-4">
+                            {/* 連接線到被繼承人 (gap-16 is 64px) */}
+                            <div className="absolute left-[-64px] top-[100px] w-16 h-0.5 bg-gray-300"></div>
+
+                            {heirs.filter(h => h.relation === 'spouse').map((heir) => (
+                              <HeirCard
+                                key={heir.id}
+                                heir={heir}
+                                assets={assets.filter(a => a.location === heir.id)}
+                                onDrop={handleDrop}
+                                onDragOver={handleDragOver}
+                                onDragStart={handleDragStart}
+                                legalShare={heir.legalShare}
+                                totalEstate={afterTaxEstate}
+                                isHeir={heir.isHeir}
+                                hasAllocationStarted={hasAllocationStarted}
+                              />
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
-                  </div>
 
-                  {/* 右側：配偶 (若有) */}
-                  <div className="flex justify-start h-full">
-                    {heirs.some(h => h.relation === 'spouse') && (
-                      <div className="relative mt-4">
-                        {/* 連接線到被繼承人 (gap-16 is 64px) */}
-                        <div className="absolute left-[-64px] top-[100px] w-16 h-0.5 bg-gray-300"></div>
+                    {/* 向下連接線 (給子女) */}
+                    {heirs.some(h => h.relation === 'child') && (
+                      <div className="flex flex-col items-center w-full -mt-6 mb-2">
+                        <div className="w-0.5 h-12 bg-gray-300"></div>
+                      </div>
+                    )}
 
-                        {heirs.filter(h => h.relation === 'spouse').map((heir) => (
+                    {/* 第三層：子女 */}
+                    {heirs.some(h => h.relation === 'child') && (
+                      <div className="flex flex-wrap justify-center gap-4 mb-8">
+                        {heirs.filter(h => h.relation === 'child').map((heir) => (
                           <HeirCard
                             key={heir.id}
                             heir={heir}
-                            assets={assets.filter(a => a.location === heir.id)}
+                            assets={assets.filter(a =>
+                              a.location === heir.id ||
+                              a.location === `${heir.id}_spouse` ||
+                              a.location.includes(`${heir.id}_child_`)
+                            )}
                             onDrop={handleDrop}
                             onDragOver={handleDragOver}
                             onDragStart={handleDragStart}
                             legalShare={heir.legalShare}
                             totalEstate={afterTaxEstate}
                             isHeir={heir.isHeir}
+                            hasAllocationStarted={hasAllocationStarted}
                           />
                         ))}
                       </div>
                     )}
+
+                    {heirs.length === 0 && (
+                      <div className="text-gray-400 py-8">請先設定家庭成員</div>
+                    )}
                   </div>
                 </div>
 
-                {/* 向下連接線 (給子女) */}
-                {heirs.some(h => h.relation === 'child') && (
-                  <div className="flex flex-col items-center w-full -mt-6 mb-2">
-                    <div className="w-0.5 h-12 bg-gray-300"></div>
-                  </div>
-                )}
-
-                {/* 第三層：子女 */}
-                {heirs.some(h => h.relation === 'child') && (
-                  <div className="flex flex-wrap justify-center gap-4 mb-8">
-                    {heirs.filter(h => h.relation === 'child').map((heir) => (
-                      <HeirCard
-                        key={heir.id}
-                        heir={heir}
-                        // 篩選資產：除了自己的，還有配偶的，以及所有孫子女的 (child_0, child_1...)
-                        assets={assets.filter(a =>
-                          a.location === heir.id ||
-                          a.location === `${heir.id}_spouse` ||
-                          a.location.includes(`${heir.id}_child_`)
-                        )}
-                        onDrop={handleDrop}
-                        onDragOver={handleDragOver}
-                        onDragStart={handleDragStart}
-                        legalShare={heir.legalShare}
-                        totalEstate={afterTaxEstate}
-                        isHeir={heir.isHeir}
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {/* 無成員提示 */}
-                {heirs.length === 0 && (
-                  <div className="text-gray-400 py-8">請先設定家庭成員</div>
-                )}
-              </div>
-            </div>
-
-            {/* 資產池 (Floating Bottom) */}
-            {/* 資產池 (Floating Island V2) */}
-            <div className={`
+                {/* 資產池 (Floating Bottom) */}
+                {/* 資產池 (Floating Island V2) */}
+                <div className={`
               fixed z-50 transition-all duration-300 ease-in-out
               ${isPoolExpanded
-                ? 'bottom-4 left-1/2 -translate-x-1/2 w-[95%] max-w-6xl rounded-2xl shadow-2xl border border-amber-200 bg-[#FFFCF9]/95 backdrop-blur-md p-4'
-                : 'bottom-4 right-4 w-auto rounded-full shadow-lg bg-white border border-gray-200 hover:shadow-xl'
-              }
+                    ? 'bottom-4 left-1/2 -translate-x-1/2 w-[95%] max-w-6xl rounded-2xl shadow-2xl border border-amber-200 bg-[#FFFCF9]/95 backdrop-blur-md p-4'
+                    : 'bottom-4 right-4 w-auto rounded-full shadow-lg bg-white border border-gray-200 hover:shadow-xl'
+                  }
             `}>
-              {!isPoolExpanded ? (
-                // Minimized View
-                <button
-                  onClick={() => setIsPoolExpanded(true)}
-                  className="flex items-center gap-2 px-4 py-3 text-[#4A3B32] font-bold hover:bg-gray-50 rounded-full transition-colors"
-                >
-                  <span className="text-xl">📦</span>
-                  <span>資產池 ({assets.filter(a => a.location === 'pool').length})</span>
-                  <Icons.ArrowUp className="w-4 h-4 ml-1" />
-                </button>
-              ) : (
-                // Expanded View
-                <div className="w-full">
-                  <div className="flex flex-col md:flex-row items-center justify-between mb-4 gap-4">
-                    <div className="text-center md:text-left flex items-center gap-4">
-                      <div>
-                        <h2 className="text-lg font-bold text-secondary">📦 資產池</h2>
-                        <p className="text-xs text-muted">點擊按鈕新增資產</p>
+                  {!isPoolExpanded ? (
+                    // Minimized View
+                    <button
+                      onClick={() => setIsPoolExpanded(true)}
+                      className="flex items-center gap-2 px-4 py-3 text-[#4A3B32] font-bold hover:bg-gray-50 rounded-full transition-colors"
+                    >
+                      <span className="text-xl">📦</span>
+                      <span>資產池 ({assets.filter(a => a.location === 'pool').length})</span>
+                      <Icons.ArrowUp className="w-4 h-4 ml-1" />
+                    </button>
+                  ) : (
+                    // Expanded View
+                    <div className="w-full">
+                      <div className="flex flex-col md:flex-row items-center justify-between mb-4 gap-4">
+                        <div className="text-center md:text-left flex items-center gap-4">
+                          <div>
+                            <h2 className="text-lg font-bold text-secondary">📦 資產池</h2>
+                            <p className="text-xs text-muted">點擊按鈕新增資產</p>
+                          </div>
+                          <button
+                            onClick={handleResetAllocation}
+                            className="px-3 py-1.5 bg-[#EF4444] text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-1 shadow-sm"
+                          >
+                            <span>↺</span> 重新分配
+                          </button>
+                          <button
+                            onClick={() => setIsPoolExpanded(false)}
+                            className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors ml-2"
+                            title="縮小視窗"
+                          >
+                            <Icons.ChevronDown className="w-5 h-5" />
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap justify-center gap-2">
+                          {(Object.entries(ASSET_TYPES) as [AssetType, { name: string; color: string; icon: string }][]).map(([key, type]) => (
+                            <button
+                              key={key}
+                              onClick={() => handleAddAssetClick(key)}
+                              className="px-3 py-1.5 rounded-lg text-white text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-1"
+                              style={{ backgroundColor: type.color }}
+                            >
+                              {type.icon} +
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      <button
-                        onClick={handleResetAllocation}
-                        className="px-3 py-1.5 bg-[#EF4444] text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-1 shadow-sm"
-                      >
-                        <span>↺</span> 重新分配
-                      </button>
-                      <button
-                        onClick={() => setIsPoolExpanded(false)}
-                        className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors ml-2"
-                        title="縮小視窗"
-                      >
-                        <Icons.ChevronDown className="w-5 h-5" />
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap justify-center gap-2">
-                      {(Object.entries(ASSET_TYPES) as [AssetType, { name: string; color: string; icon: string }][]).map(([key, type]) => (
-                        <button
-                          key={key}
-                          onClick={() => handleAddAssetClick(key)}
-                          className="px-3 py-1.5 rounded-lg text-white text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-1"
-                          style={{ backgroundColor: type.color }}
-                        >
-                          {type.icon} +
-                        </button>
-                      ))}
-                    </div>
-                  </div>
 
-                  {/* Add Asset Modal */}
-                  {isModalOpen && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in fade-in zoom-in-95 duration-200">
-                        <h3 className="text-xl font-bold text-[#4A3B32] mb-4 flex items-center gap-2">
-                          <span className="text-2xl">{ASSET_TYPES[pendingType].icon}</span>
-                          新增{ASSET_TYPES[pendingType].name}
-                        </h3>
+                      {/* Add Asset Modal */}
+                      {isModalOpen && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in fade-in zoom-in-95 duration-200">
+                            <h3 className="text-xl font-bold text-[#4A3B32] mb-4 flex items-center gap-2">
+                              <span className="text-2xl">{ASSET_TYPES[pendingType].icon}</span>
+                              新增{ASSET_TYPES[pendingType].name}
+                            </h3>
 
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              金額 (萬元) <span className="text-red-500">*</span>
-                            </label>
-                            <input
-                              type="number"
-                              value={pendingAmount}
-                              onChange={(e) => setPendingAmount(e.target.value)}
-                              placeholder="例如：500 (代表500萬)"
-                              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#D38B3F] focus:border-transparent text-lg"
-                              autoFocus
-                            />
-                          </div>
+                            <div className="space-y-4">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  金額 (萬元) <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                  type="number"
+                                  value={pendingAmount}
+                                  onChange={(e) => setPendingAmount(e.target.value)}
+                                  placeholder="例如：500 (代表500萬)"
+                                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#D38B3F] focus:border-transparent text-lg"
+                                  autoFocus
+                                />
+                              </div>
 
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              項目名稱 (選填)
-                            </label>
-                            <input
-                              type="text"
-                              value={pendingName}
-                              onChange={(e) => setPendingName(e.target.value)}
-                              placeholder={`例如：${pendingType === 'property' ? '台北大安區公寓' : '台積電股票'} `}
-                              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#D38B3F] focus:border-transparent"
-                            />
-                            <p className="text-xs text-gray-400 mt-1">若不填寫將顯示預設名稱</p>
-                          </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  項目名稱 (選填)
+                                </label>
+                                <input
+                                  type="text"
+                                  value={pendingName}
+                                  onChange={(e) => setPendingName(e.target.value)}
+                                  placeholder={`例如：${pendingType === 'property' ? '台北大安區公寓' : '台積電股票'} `}
+                                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#D38B3F] focus:border-transparent"
+                                />
+                                <p className="text-xs text-gray-400 mt-1">若不填寫將顯示預設名稱</p>
+                              </div>
 
-                          <div className="flex gap-3 mt-6">
-                            <button
-                              onClick={() => setIsModalOpen(false)}
-                              className="flex-1 py-3 px-4 border border-gray-300 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition-colors"
-                            >
-                              取消
-                            </button>
-                            <button
-                              onClick={handleConfirmAdd}
-                              className="flex-1 py-3 px-4 bg-[#D38B3F] text-white font-bold rounded-xl hover:bg-[#B97A37] transition-colors"
-                            >
-                              確認新增
-                            </button>
+                              <div className="flex gap-3 mt-6">
+                                <button
+                                  onClick={() => setIsModalOpen(false)}
+                                  className="flex-1 py-3 px-4 border border-gray-300 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition-colors"
+                                >
+                                  取消
+                                </button>
+                                <button
+                                  onClick={handleConfirmAdd}
+                                  className="flex-1 py-3 px-4 bg-[#D38B3F] text-white font-bold rounded-xl hover:bg-[#B97A37] transition-colors"
+                                >
+                                  確認新增
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         </div>
+                      )}
+
+                      <div
+                        onDrop={(e) => handleDrop(e, 'pool')}
+                        onDragOver={handleDragOver}
+                        className="min-h-[120px] border-2 border-dashed border-gray-200 rounded-xl p-4 bg-gray-50"
+                      >
+                        <div className="flex flex-wrap gap-3">
+                          <AnimatePresence>
+                            {assets.filter(a => a.location === 'pool')
+                              .sort((a, b) => {
+                                const typeOrder = Object.keys(ASSET_TYPES);
+                                const typeDiff = typeOrder.indexOf(a.type) - typeOrder.indexOf(b.type);
+                                if (typeDiff !== 0) return typeDiff;
+                                return b.amount - a.amount;
+                              })
+                              .map((asset) => (
+                                <motion.div
+                                  key={asset.id}
+                                  layoutId={asset.id}
+                                  initial={{ opacity: 0, scale: 0.8 }}
+                                  animate={{ opacity: 1, scale: 1 }}
+                                  exit={{ opacity: 0, scale: 0.8 }}
+                                  transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                                  className="relative group"
+                                >
+                                  <AssetBlock asset={asset} onDragStart={handleDragStart} />
+                                  <button
+                                    onClick={() => handleDeleteAsset(asset.id)}
+                                    className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full
+                          opacity-0 group-hover:opacity-100 transition-opacity text-xs leading-none flex items-center justify-center pb-0.5"
+                                  >
+                                    ×
+                                  </button>
+                                  <input
+                                    type="number"
+                                    value={asset.amount / 10000}
+                                    onChange={(e) => handleAssetAmountChange(asset.id, (parseInt(e.target.value) || 0) * 10000)}
+                                    className="absolute -bottom-7 left-0 right-0 text-xs text-center bg-white border rounded px-1 py-0.5
+                          opacity-0 group-hover:opacity-100 transition-opacity w-full"
+                                    step={10}
+                                  />
+                                </motion.div>
+                              ))}
+                          </AnimatePresence>
+                          {poolAssets.length === 0 && (
+                            <div className="w-full text-center text-gray-400 py-4">
+                              所有資產已分配完畢 ✨
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 圖例 */}
+                      <div className="mt-4 flex flex-wrap gap-4 text-sm text-gray-600">
+                        {Object.entries(ASSET_TYPES).map(([key, type]) => (
+                          <div key={key} className="flex items-center gap-1.5">
+                            <div className="w-3 h-3 rounded" style={{ backgroundColor: type.color }} />
+                            <span>{type.icon} {type.name}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
+                </div>
 
-                  <div
-                    onDrop={(e) => handleDrop(e, 'pool')}
-                    onDragOver={handleDragOver}
-                    className="min-h-[120px] border-2 border-dashed border-gray-200 rounded-xl p-4 bg-gray-50"
-                  >
-                    <div className="flex flex-wrap gap-3">
-                      <AnimatePresence>
-                        {assets.filter(a => a.location === 'pool')
-                          .sort((a, b) => {
-                            const typeOrder = Object.keys(ASSET_TYPES);
-                            const typeDiff = typeOrder.indexOf(a.type) - typeOrder.indexOf(b.type);
-                            if (typeDiff !== 0) return typeDiff;
-                            return b.amount - a.amount;
-                          })
-                          .map((asset) => (
-                            <motion.div
-                              key={asset.id}
-                              layoutId={asset.id}
-                              initial={{ opacity: 0, scale: 0.8 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              exit={{ opacity: 0, scale: 0.8 }}
-                              transition={{ type: "spring", stiffness: 350, damping: 25 }}
-                              className="relative group"
-                            >
-                              <AssetBlock asset={asset} onDragStart={handleDragStart} />
-                              <button
-                                onClick={() => handleDeleteAsset(asset.id)}
-                                className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full
-                          opacity-0 group-hover:opacity-100 transition-opacity text-xs leading-none flex items-center justify-center pb-0.5"
-                              >
-                                ×
-                              </button>
-                              <input
-                                type="number"
-                                value={asset.amount / 10000}
-                                onChange={(e) => handleAssetAmountChange(asset.id, (parseInt(e.target.value) || 0) * 10000)}
-                                className="absolute -bottom-7 left-0 right-0 text-xs text-center bg-white border rounded px-1 py-0.5
-                          opacity-0 group-hover:opacity-100 transition-opacity w-full"
-                                step={10}
-                              />
-                            </motion.div>
-                          ))}
-                      </AnimatePresence>
-                      {poolAssets.length === 0 && (
-                        <div className="w-full text-center text-gray-400 py-4">
-                          所有資產已分配完畢 ✨
-                        </div>
-                      )}
-                    </div>
-                  </div>
 
-                  {/* 圖例 */}
-                  <div className="mt-4 flex flex-wrap gap-4 text-sm text-gray-600">
-                    {Object.entries(ASSET_TYPES).map(([key, type]) => (
-                      <div key={key} className="flex items-center gap-1.5">
-                        <div className="w-3 h-3 rounded" style={{ backgroundColor: type.color }} />
-                        <span>{type.icon} {type.name}</span>
-                      </div>
-                    ))}
+                {/* 說明 */}
+                <div className="bg-border/30 rounded-xl p-6 border border-border">
+                  <h3 className="font-bold text-secondary mb-3">📚 使用說明</h3>
+                  <ul className="text-sm text-secondary space-y-1.5">
+                    <li>• <strong>拖拉分配</strong>：將資產方塊從資產池拖到繼承人卡片</li>
+                    <li>• <strong>調整金額</strong>：滑鼠移到方塊上可修改金額</li>
+                    <li>• <strong>新增資產</strong>：點擊資產池右上角的按鈕</li>
+                    <li>• <strong>特留分警告</strong>：低於特留分時卡片會變紅</li>
+                  </ul>
+                  <div className="mt-4 p-3 bg-white/50 rounded-lg text-sm text-primary">
+                    💡 本工具僅供參考，實際遺產規劃請諮詢專業顧問
                   </div>
                 </div>
-              )}
-            </div>
-
-
-            {/* 說明 */}
-            <div className="bg-border/30 rounded-xl p-6 border border-border">
-              <h3 className="font-bold text-secondary mb-3">📚 使用說明</h3>
-              <ul className="text-sm text-secondary space-y-1.5">
-                <li>• <strong>拖拉分配</strong>：將資產方塊從資產池拖到繼承人卡片</li>
-                <li>• <strong>調整金額</strong>：滑鼠移到方塊上可修改金額</li>
-                <li>• <strong>新增資產</strong>：點擊資產池右上角的按鈕</li>
-                <li>• <strong>特留分警告</strong>：低於特留分時卡片會變紅</li>
-              </ul>
-              <div className="mt-4 p-3 bg-white/50 rounded-lg text-sm text-primary">
-                💡 本工具僅供參考，實際遺產規劃請諮詢專業顧問
-              </div>
-            </div>
-          </div >
+              </div >
+            );
+          })()
         )
         }
       </main >
