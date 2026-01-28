@@ -125,7 +125,7 @@ interface AssetBlockProps {
 }
 
 const AssetBlock: FC<AssetBlockProps> = ({ asset, onDragStart, size = 'normal', showAmount = true }) => {
-  const type = ASSET_TYPES[asset.type];
+  const type = ASSET_TYPES[asset.type] || ASSET_TYPES.cash;
   const blockSize = size === 'small' ? 50 : Math.max(60, Math.min(100, Math.sqrt(asset.amount / 100000) * 18));
 
   return (
@@ -1400,8 +1400,8 @@ export default function InheritanceVisualizer() {
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in fade-in zoom-in-95 duration-200">
                             <h3 className="text-xl font-bold text-[#4A3B32] mb-4 flex items-center gap-2">
-                              <span className="text-2xl">{ASSET_TYPES[pendingType].icon}</span>
-                              新增{ASSET_TYPES[pendingType].name}
+                              <span className="text-2xl">{(ASSET_TYPES[pendingType] || ASSET_TYPES.cash).icon}</span>
+                              新增{(ASSET_TYPES[pendingType] || ASSET_TYPES.cash).name}
                             </h3>
 
                             <div className="space-y-4">
