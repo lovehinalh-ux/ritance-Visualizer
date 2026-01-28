@@ -88,7 +88,7 @@ const ASSET_TYPES: Record<AssetType, { name: string; color: string; icon: string
 };
 
 const INITIAL_FAMILY: Family = {
-  self: { name: '被繼承人', gender: 'male' },
+  self: { name: '', gender: 'male' },
   spouse: { id: 'spouse', name: '配偶', gender: 'female', status: PersonStatus.NONE, hasSpouse: false, hasChildren: false },
   father: { id: 'father', name: '父', gender: 'male', status: PersonStatus.ALIVE },
   mother: { id: 'mother', name: '母', gender: 'female', status: PersonStatus.ALIVE },
@@ -156,19 +156,20 @@ interface HeirCardProps {
   assets: Asset[];
   onDrop: (e: React.DragEvent, location: string) => void;
   onDragOver: (e: React.DragEvent) => void;
-  onDeleteAsset: (assetId: string) => void;
+  onDragStart: (e: React.DragEvent, asset: Asset) => void;
   legalShare: number;
   totalEstate: number;
   isHeir: boolean;
 }
 
-const HeirCard: FC<HeirCardProps> = ({ heir, assets, onDrop, onDragOver, onDeleteAsset, legalShare, totalEstate, isHeir }) => {
+
+const HeirCard: FC<HeirCardProps> = ({ heir, assets, onDrop, onDragOver, onDragStart, legalShare, totalEstate, isHeir }) => {
   const totalReceived = assets.reduce((sum, a) => sum + a.amount, 0);
   const expectedAmount = totalEstate * legalShare;
   const reservedAmount = expectedAmount / 2;
   const isUnderReserved = isHeir && totalReceived < reservedAmount && totalReceived > 0;
 
-  return (
+  const mainContent = (
     <div
       onDrop={(e) => onDrop(e, heir.id)}
       onDragOver={onDragOver}
@@ -193,24 +194,6 @@ const HeirCard: FC<HeirCardProps> = ({ heir, assets, onDrop, onDragOver, onDelet
         </div>
         <span className="mt-2 font-semibold text-gray-700">{heir.name}</span>
         <span className="text-xs text-gray-400 mb-1">{heir.relationLabel}</span>
-
-        {/* 子女的家庭狀況顯示 */}
-        {heir.relation === 'child' && (heir.hasSpouse || heir.hasChildren) && (
-          <div className="flex gap-2 mt-1 bg-amber-50 px-2 py-1 rounded-md border border-amber-100">
-            {heir.hasSpouse && (
-              <div className="flex items-center text-xs text-gray-500" title="已婚">
-                <span className="mr-0.5 text-pink-500">I</span>
-                <span>配偶</span>
-              </div>
-            )}
-            {heir.hasChildren && (
-              <div className="flex items-center text-xs text-gray-500" title={`有子女 ${heir.childCount} 人`}>
-                <span className="mr-0.5 text-blue-500">I</span>
-                <span>{heir.childCount || 1}子</span>
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {/* 應繼分資訊 */}
@@ -232,16 +215,10 @@ const HeirCard: FC<HeirCardProps> = ({ heir, assets, onDrop, onDragOver, onDelet
           </div>
         ) : (
           <div className="flex flex-wrap gap-1 justify-center">
-            {assets.map((asset) => (
+            {assets.filter(a => a.location === heir.id).map((asset) => (
               <div key={asset.id} className="relative group">
-                <AssetBlock asset={asset} onDragStart={() => { }} size="small" />
-                <button
-                  onClick={() => onDeleteAsset(asset.id)}
-                  className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full
-                    opacity-0 group-hover:opacity-100 transition-opacity text-xs leading-none z-10 flex items-center justify-center pb-0.5"
-                >
-                  ×
-                </button>
+                <AssetBlock asset={asset} onDragStart={onDragStart} size="small" />
+                {/* 繼承人卡片上的資產不顯示刪除按鈕，因為只能刪除 POOL 中的資產 */}
               </div>
             ))}
           </div>
@@ -259,6 +236,64 @@ const HeirCard: FC<HeirCardProps> = ({ heir, assets, onDrop, onDragOver, onDelet
       )}
     </div>
   );
+
+  // 若為子女且有配偶或子女，使用 Side-by-Side 佈局
+  if (heir.relation === 'child' && (heir.hasSpouse || heir.hasChildren)) {
+    return (
+      <div className="flex gap-2 items-start">
+        {mainContent}
+
+        {/* 擴充資訊區 (右側) */}
+        <div className="flex flex-col gap-2 pt-2">
+          {heir.hasSpouse && (
+            <div
+              onDrop={(e) => {
+                e.stopPropagation();
+                onDrop(e, `${heir.id}_spouse`);
+              }}
+              onDragOver={onDragOver}
+              className={`flex flex-col items-center justify-center p-1 rounded-lg border-2 border-dashed bg-pink-50 w-[70px] h-[70px] transition-colors
+                ${assets.filter(a => a.location === `${heir.id}_spouse`).length > 0 ? 'border-pink-300' : 'border-pink-200'}
+              `}
+            >
+              <div className="text-xs text-pink-500 font-bold mb-1 scale-90">配偶</div>
+              <div className="flex flex-wrap gap-0.5 justify-center overflow-hidden w-full h-full">
+                {assets.filter(a => a.location === `${heir.id}_spouse`).map(asset => (
+                  <div key={asset.id} className="scale-75 origin-center">
+                    <AssetBlock asset={asset} onDragStart={onDragStart} size="small" showAmount={false} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {heir.hasChildren && (
+            <div
+              onDrop={(e) => {
+                e.stopPropagation();
+                onDrop(e, `${heir.id}_children`);
+              }}
+              onDragOver={onDragOver}
+              className={`flex flex-col items-center justify-center p-1 rounded-lg border-2 border-dashed bg-blue-50 w-[70px] h-[70px] transition-colors
+                ${assets.filter(a => a.location === `${heir.id}_children`).length > 0 ? 'border-blue-300' : 'border-blue-200'}
+              `}
+            >
+              <div className="text-xs text-blue-500 font-bold mb-1 scale-90">{heir.childCount}子女</div>
+              <div className="flex flex-wrap gap-0.5 justify-center overflow-hidden w-full h-full">
+                {assets.filter(a => a.location === `${heir.id}_children`).map(asset => (
+                  <div key={asset.id} className="scale-75 origin-center">
+                    <AssetBlock asset={asset} onDragStart={onDragStart} size="small" showAmount={false} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return mainContent;
 };
 
 // ============ 稅務面板元件 ============
@@ -696,8 +731,16 @@ export default function InheritanceVisualizer() {
     if (!draggedAsset) return;
 
     // 分配邏輯：可分配給繼承池或任何在清覽表中的人
+    // 支援：
+    // 1. Pool -> Heir (原功能)
+    // 2. Heir -> Heir (新功能 - 只要 targetLocation 是另一個繼承人)
+    // 3. Heir -> Pool (新功能 - targetLocation === 'pool')
+
+    // 如果目標是 drop zone (例如子女的配偶/小孩區)，ID 會是 childId_spouse 或 childId_children
     const targetHeir = heirs.find(h => h.id === targetLocation);
-    if (!targetHeir && targetLocation !== 'pool') return;
+    const isExtendedZone = targetLocation.endsWith('_spouse') || targetLocation.endsWith('_children');
+
+    if (!targetHeir && targetLocation !== 'pool' && !isExtendedZone) return;
 
     setAssets(prev => prev.map(a =>
       a.id === draggedAsset.id ? { ...a, location: targetLocation } : a
@@ -707,6 +750,10 @@ export default function InheritanceVisualizer() {
 
 
   const handleDeleteAsset = (assetId: string) => {
+    // 僅允許在 pool 內的資產被刪除 (UI 層面已做防堵，這裡做雙重確認)
+    const asset = assets.find(a => a.id === assetId);
+    if (asset?.location !== 'pool') return;
+
     if (confirm('確定要刪除此資產嗎？')) {
       setAssets(prev => prev.filter(a => a.id !== assetId));
     }
@@ -794,7 +841,7 @@ export default function InheritanceVisualizer() {
                       type="text"
                       value={family.self.name}
                       onChange={(e) => setFamily(prev => ({ ...prev, self: { ...prev.self, name: e.target.value } }))}
-                      placeholder="請輸入您的名字"
+                      placeholder="請輸入姓名"
                       className="flex-1 p-3 border border-[#E5D5C5] bg-[#FFFCF9] text-[#4A3B32] placeholder-[#B0A8A0] rounded-lg focus:ring-2 focus:ring-[#D97706] focus:border-transparent outline-none transition-all"
                     />
                     <div className="flex bg-[#FFFCF9] border border-[#E5D5C5] rounded-lg overflow-hidden p-1 gap-1">
@@ -1124,7 +1171,7 @@ export default function InheritanceVisualizer() {
                       assets={assets.filter(a => a.location === heir.id)}
                       onDrop={handleDrop}
                       onDragOver={handleDragOver}
-                      onDeleteAsset={handleDeleteAsset}
+                      onDragStart={handleDragStart}
                       legalShare={heir.legalShare}
                       totalEstate={afterTaxEstate}
                       isHeir={heir.isHeir}
@@ -1154,7 +1201,7 @@ export default function InheritanceVisualizer() {
                             assets={assets.filter(a => a.location === heir.id)}
                             onDrop={handleDrop}
                             onDragOver={handleDragOver}
-                            onDeleteAsset={handleDeleteAsset}
+                            onDragStart={handleDragStart}
                             legalShare={heir.legalShare}
                             totalEstate={afterTaxEstate}
                             isHeir={heir.isHeir}
@@ -1191,7 +1238,7 @@ export default function InheritanceVisualizer() {
                           assets={assets.filter(a => a.location === heir.id)}
                           onDrop={handleDrop}
                           onDragOver={handleDragOver}
-                          onDeleteAsset={handleDeleteAsset}
+                          onDragStart={handleDragStart}
                           legalShare={heir.legalShare}
                           totalEstate={afterTaxEstate}
                           isHeir={heir.isHeir}
@@ -1213,10 +1260,10 @@ export default function InheritanceVisualizer() {
                       <HeirCard
                         key={heir.id}
                         heir={heir}
-                        assets={assets.filter(a => a.location === heir.id)}
+                        assets={assets.filter(a => a.location === heir.id || a.location === `${heir.id}_spouse` || a.location === `${heir.id}_children`)}
                         onDrop={handleDrop}
                         onDragOver={handleDragOver}
-                        onDeleteAsset={handleDeleteAsset}
+                        onDragStart={handleDragStart}
                         legalShare={heir.legalShare}
                         totalEstate={afterTaxEstate}
                         isHeir={heir.isHeir}
