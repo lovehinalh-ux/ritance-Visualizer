@@ -1,4 +1,4 @@
-import React, { useState, useMemo, type FC } from 'react';
+import React, { useState, useMemo, useEffect, type FC } from 'react';
 
 // ============ 類型定義 ============
 type AssetType = 'cash' | 'stock' | 'property';
@@ -54,16 +54,27 @@ const formatMoney = (amount: number) => {
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-// 遺產稅計算（台灣 2024 年級距）
-const calculateInheritanceTax = (taxableAmount: number) => {
-  const exemption = 13330000; // 免稅額
-  const deductions = 5530000; // 基本扣除額
-  const netAmount = Math.max(0, taxableAmount - exemption - deductions);
+// ============ 稅額常數 (民國114年適用) ============
+const ESTATE_TAX_EXEMPTION = 13330000;
+const DEDUCTION_SPOUSE = 5530000;
+const DEDUCTION_PARENT = 1380000;
+const DEDUCTION_CHILD = 560000;
+const DEDUCTION_FUNERAL = 1380000;
 
-  if (netAmount <= 0) return 0;
-  if (netAmount <= 50000000) return netAmount * 0.1;
-  if (netAmount <= 100000000) return 5000000 + (netAmount - 50000000) * 0.15;
-  return 12500000 + (netAmount - 100000000) * 0.2;
+const ESTATE_TAX_BRACKETS = [
+  { limit: 56210000, rate: 0.10, deduction: 0 },
+  { limit: 112420000, rate: 0.15, deduction: 2810500 },
+  { limit: Infinity, rate: 0.20, deduction: 8431500 },
+];
+
+const calculateInheritanceTax = (taxableAmount: number) => {
+  if (taxableAmount <= 0) return { tax: 0, rate: 0 };
+  const bracket = ESTATE_TAX_BRACKETS.find(b => taxableAmount <= b.limit) || ESTATE_TAX_BRACKETS[ESTATE_TAX_BRACKETS.length - 1];
+  const tax = (taxableAmount * bracket.rate) - bracket.deduction;
+  return {
+    tax: Math.max(0, tax),
+    rate: bracket.rate
+  };
 };
 
 // ============ 常數定義 ============
@@ -218,14 +229,229 @@ const HeirCard: FC<HeirCardProps> = ({ heir, assets, onDrop, onDragOver, onDelet
 
       {/* 實際取得金額 */}
       {assets.length > 0 && (
-        <div className={`mt-2 text-center text-sm font-medium
-          ${isUnderReserved ? 'text-red-600' : 'text-success'}`}>
+        <div className={`mt-2 text-center text-sm font-medium ${isUnderReserved ? 'text-red-600' : 'text-green-600'}`}>
           實得: {formatMoney(totalReceived)}
           {isUnderReserved && (
             <div className="text-xs text-red-500">⚠️ 低於特留分</div>
           )}
         </div>
       )}
+    </div>
+  );
+};
+
+// ============ 稅務面板元件 ============
+interface EstateTaxPanelProps {
+  totalEstate: number;
+  family: Family;
+  onCalculatedChange?: (total: number, tax: number) => void;
+}
+
+const EstateTaxPanel: FC<EstateTaxPanelProps> = ({ totalEstate, family: initialFamily, onCalculatedChange }) => {
+  const [isExpanded, setIsExpanded] = useState(true); // Default expanded for usability
+
+  // Local Calculator States (Manual Overrides)
+  const [localAssets, setLocalAssets] = useState<string>('');
+  const [localSpouse, setLocalSpouse] = useState<boolean>(initialFamily.spouse.status === PersonStatus.ALIVE);
+  const [localChildren, setLocalChildren] = useState<number>(initialFamily.children.filter(c => c.status === PersonStatus.ALIVE).length);
+  const [localParents, setLocalParents] = useState<number>((initialFamily.father.status === PersonStatus.ALIVE ? 1 : 0) + (initialFamily.mother.status === PersonStatus.ALIVE ? 1 : 0));
+  const [localOther, setLocalOther] = useState<string>('');
+
+  // Rename and update functionality: "清除數字" instead of sync
+  const handleClearClick = () => {
+    setLocalAssets('');
+    setLocalOther('');
+    // Optionally reset family counts to initial props
+    setLocalSpouse(initialFamily.spouse.status === PersonStatus.ALIVE);
+    setLocalChildren(initialFamily.children.filter(c => c.status === PersonStatus.ALIVE).length);
+    setLocalParents((initialFamily.father.status === PersonStatus.ALIVE ? 1 : 0) + (initialFamily.mother.status === PersonStatus.ALIVE ? 1 : 0));
+  };
+
+  // 1. Calculate Active Values
+  const activeAssets = localAssets !== '' ? (parseFloat(localAssets) || 0) * 10000 : totalEstate;
+  const activeOther = (parseFloat(localOther) || 0) * 10000;
+
+  // 2. Calculate Deductions
+  const deductions = useMemo(() => {
+    interface DeductionItem { label: string; amount: number; fixed?: boolean }
+    const items: DeductionItem[] = [
+      { label: '免稅額', amount: ESTATE_TAX_EXEMPTION, fixed: true },
+      { label: '喪葬費 (標準)', amount: DEDUCTION_FUNERAL, fixed: true },
+    ];
+
+    if (localSpouse) items.push({ label: '配偶扣除額', amount: DEDUCTION_SPOUSE });
+    if (localParents > 0) items.push({ label: `父母扣除額(${localParents}位)`, amount: DEDUCTION_PARENT * localParents });
+    if (localChildren > 0) items.push({ label: `卑親屬扣除額(${localChildren}位)`, amount: DEDUCTION_CHILD * localChildren });
+    if (activeOther > 0) items.push({ label: '其他扣除額', amount: activeOther });
+
+    return items;
+  }, [localSpouse, localParents, localChildren, activeOther]);
+
+  const totalDeduction = deductions.reduce((sum: number, item: { amount: number }) => sum + item.amount, 0);
+  const taxableAmount = Math.max(0, activeAssets - totalDeduction);
+  const { tax, rate } = calculateInheritanceTax(taxableAmount);
+
+  // Sync back to parent for main UI summary
+  useEffect(() => {
+    if (onCalculatedChange) {
+      onCalculatedChange(activeAssets, tax);
+    }
+  }, [activeAssets, tax, onCalculatedChange]);
+
+  return (
+    <div className="bg-white rounded-2xl shadow-lg border border-[#F3E5D8] overflow-hidden mb-6">
+      <div className="bg-[#4A3B32] p-4 text-white flex justify-between items-center cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
+        <div className="flex items-center gap-3">
+          <div className="bg-[#D38B3F] p-2 rounded-lg">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+          </div>
+          <div>
+            <h2 className="font-bold text-lg">遺產稅試算工具 (試算盤)</h2>
+            <p className="text-xs text-amber-200">可手動調整數字進行試算，不影響下方分配</p>
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-sm opacity-80">預估遺產稅</div>
+          <div className="text-xl font-bold text-amber-400">{formatMoney(tax)}</div>
+        </div>
+      </div>
+
+      <div className={`transition-all duration-300 ${isExpanded ? 'max-h-[1500px] border-t' : 'max-h-0'} overflow-hidden`}>
+        <div className="p-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            {/* 左側：輸入區 */}
+            <div className="lg:col-span-7 space-y-6">
+              <section>
+                <div className="flex justify-between items-end mb-2">
+                  <h3 className="text-sm font-bold text-[#4A3B32]">1. 遺產總額</h3>
+                  <button
+                    onClick={handleClearClick}
+                    className="text-[10px] bg-red-50 text-red-600 border border-red-100 px-2 py-1 rounded hover:bg-red-100 transition-colors flex items-center gap-1"
+                  >
+                    <span>🗑️ 清除數字</span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={localAssets}
+                    onChange={(e) => setLocalAssets(e.target.value)}
+                    placeholder={(totalEstate / 10000).toString()}
+                    className="w-full p-3 border border-[#E5D5C5] bg-[#FFFCF9] text-xl font-bold text-[#4A3B32] rounded-xl focus:ring-2 focus:ring-[#D97706] outline-none"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">萬元</span>
+                </div>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {[1000, 3000, 5000, 10000].map(val => (
+                    <button
+                      key={val}
+                      onClick={() => setLocalAssets(val.toString())}
+                      className="px-3 py-1 text-xs bg-gray-100 text-[#4A3B32] rounded-md hover:bg-[#E5D5C5] transition-colors border border-gray-200"
+                    >
+                      {val >= 10000 ? `${val / 10000} 億` : `${val} 萬`}
+                    </button>
+                  ))}
+                  <button onClick={() => setLocalAssets('')} className="px-3 py-1 text-xs text-red-500 hover:bg-red-50 rounded-md">清除</button>
+                </div>
+              </section>
+
+              <section className="bg-[#FFFCF9] border border-[#F3E5D8] rounded-xl p-4">
+                <h3 className="text-sm font-bold text-[#4A3B32] mb-3">2. 扣除額快速調整</h3>
+                <div className="space-y-3">
+                  {/* 配偶 */}
+                  <div className="flex justify-between items-center py-1 border-b border-dashed border-gray-200">
+                    <span className="text-sm text-gray-600">配偶</span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" checked={localSpouse} onChange={e => setLocalSpouse(e.target.checked)} className="sr-only peer" />
+                      <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#D38B3F]"></div>
+                    </label>
+                  </div>
+                  {/* 子女 */}
+                  <div className="flex justify-between items-center py-1 border-b border-dashed border-gray-200">
+                    <span className="text-sm text-gray-600">卑親屬 (子女)</span>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setLocalChildren(Math.max(0, localChildren - 1))} className="w-6 h-6 rounded-full bg-gray-100 text-gray-600">-</button>
+                      <span className="w-4 text-center font-bold text-sm">{localChildren}</span>
+                      <button onClick={() => setLocalChildren(localChildren + 1)} className="w-6 h-6 rounded-full bg-amber-100 text-[#D38B3F]">+</button>
+                    </div>
+                  </div>
+                  {/* 父母 */}
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-sm text-gray-600">父母</span>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setLocalParents(Math.max(0, localParents - 1))} className="w-6 h-6 rounded-full bg-gray-100 text-gray-600">-</button>
+                      <span className="w-4 text-center font-bold text-sm">{localParents}</span>
+                      <button onClick={() => setLocalParents(Math.min(2, localParents + 1))} className="w-6 h-6 rounded-full bg-amber-100 text-[#D38B3F]">+</button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <label className="text-xs font-bold text-gray-400 mb-1 block">其他扣除額 (萬元)</label>
+                <input
+                  type="number"
+                  value={localOther}
+                  onChange={e => setLocalOther(e.target.value)}
+                  placeholder="債務、稅款等..."
+                  className="w-full p-2 border border-[#E5D5C5] bg-[#FFFCF9] rounded-lg text-sm outline-none"
+                />
+              </section>
+            </div>
+
+            {/* 右側：結果摘要 */}
+            <div className="lg:col-span-5 space-y-4">
+              <div className="bg-[#4A3B32] text-white rounded-xl p-5 shadow-inner">
+                <h3 className="text-xs font-bold opacity-60 uppercase mb-4 tracking-widest text-center">計算結果</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between text-sm">
+                    <span className="opacity-70">遺產總額</span>
+                    <span className="font-mono">{formatMoney(activeAssets)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-green-400">
+                    <span className="opacity-70">扣除總計</span>
+                    <span className="font-mono">-{formatMoney(totalDeduction)}</span>
+                  </div>
+                  <div className="border-t border-white/10 pt-2 flex justify-between">
+                    <span className="font-bold">應稅遺產</span>
+                    <span className="font-mono text-lg text-amber-400">{formatMoney(taxableAmount)}</span>
+                  </div>
+                  <div className="mt-4 bg-white/5 rounded-lg p-3 text-center border border-white/10">
+                    <div className="text-xs opacity-50 mb-1">預估遺產稅率 {(rate * 100).toFixed(0)}%</div>
+                    <div className="text-3xl font-black text-amber-500">{formatMoney(tax)}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 小級距表 */}
+              <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                <table className="w-full text-[10px] text-left">
+                  <thead>
+                    <tr className="text-gray-400 border-b">
+                      <th className="pb-1">應稅淨額</th>
+                      <th className="pb-1">稅率</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ESTATE_TAX_BRACKETS.map((b, i) => (
+                      <tr key={i} className={taxableAmount <= b.limit && (i === 0 || taxableAmount > ESTATE_TAX_BRACKETS[i - 1].limit) ? 'text-[#D38B3F] font-bold' : 'text-gray-400'}>
+                        <td className="py-1">{b.limit === Infinity ? '1.12億以上' : `${b.limit / 100000000} 億以下`}</td>
+                        <td className="py-1">{(b.rate * 100)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-[#FFFCF9] border-t px-4 py-2 flex justify-center">
+        <button onClick={() => setIsExpanded(!isExpanded)} className="text-[#D38B3F] text-xs font-bold flex items-center gap-1 hover:underline">
+          {isExpanded ? '收合面板 ▲' : '展開完整試算工具 ▼'}
+        </button>
+      </div>
     </div>
   );
 };
@@ -244,6 +470,10 @@ export default function InheritanceVisualizer() {
   const [pendingAmount, setPendingAmount] = useState<string>('');
   const [pendingName, setPendingName] = useState<string>('');
 
+  // States to sync from the tax calculator
+  const [calcTotal, setCalcTotal] = useState<number>(0);
+  const [calcTax, setCalcTax] = useState<number>(0);
+
   // ============ 家庭資料處理 ============
   const updateSpouse = (hasSpouse: boolean) => {
     setFamily(prev => ({
@@ -259,7 +489,7 @@ export default function InheritanceVisualizer() {
   const addChild = () => {
     const newChild: FamilyMember = {
       id: generateId(),
-      name: `子女 ${family.children.length + 1}`,
+      name: `子女 ${family.children.length + 1} `,
       gender: 'male',
       status: PersonStatus.ALIVE,
     };
@@ -288,102 +518,79 @@ export default function InheritanceVisualizer() {
 
   // ============ 計算繼承人 ============
   const heirs = useMemo<Heir[]>(() => {
-    const result: Heir[] = [];
-    const hasSpouse = family.spouse.status === PersonStatus.ALIVE;
+    // 加入所有在輸入頁中「存在」的人 (包含非繼承人)
+    const allCandidates: (FamilyMember & { relation: Heir['relation'], relationLabel: string })[] = [];
+
+    // 依序加入配偶、父母、子女
+    if (family.spouse.status !== PersonStatus.NONE) {
+      allCandidates.push({ ...family.spouse, relation: 'spouse', relationLabel: '配偶' });
+    }
+    if (family.father.status !== PersonStatus.NONE) {
+      allCandidates.push({ ...family.father, relation: 'parent', relationLabel: '父親' });
+    }
+    if (family.mother.status !== PersonStatus.NONE) {
+      allCandidates.push({ ...family.mother, relation: 'parent', relationLabel: '母親' });
+    }
+    family.children.forEach(c => {
+      allCandidates.push({ ...c, relation: 'child', relationLabel: '子女' });
+    });
+
+    // 定義合法繼承人判斷基準
     const livingChildren = family.children.filter(c => c.status === PersonStatus.ALIVE);
+    const hasSpouse = family.spouse.status === PersonStatus.ALIVE;
     const hasFather = family.father.status === PersonStatus.ALIVE;
     const hasMother = family.mother.status === PersonStatus.ALIVE;
 
-    // 第一順位：子女
-    if (livingChildren.length > 0) {
-      const totalHeirs = livingChildren.length + (hasSpouse ? 1 : 0);
-      const share = `1/${totalHeirs}`;
+    return allCandidates.map(person => {
+      let isHeir = false;
+      let share = '0';
+      let legalShare = 0;
 
-      if (hasSpouse) {
-        result.push({
-          ...family.spouse,
-          relation: 'spouse',
-          relationLabel: '配偶',
-          isHeir: true,
-          share,
-          legalShare: 1 / totalHeirs,
-        });
+      // 法律繼承順位邏輯
+      if (livingChildren.length > 0) {
+        if ((person.relation === 'child' && person.status === PersonStatus.ALIVE) || (person.relation === 'spouse' && hasSpouse)) {
+          isHeir = true;
+          const totalHeirs = livingChildren.length + (hasSpouse ? 1 : 0);
+          share = `1 / ${totalHeirs} `;
+          legalShare = 1 / totalHeirs;
+        }
+      } else if (hasFather || hasMother) {
+        if ((person.relation === 'parent' && person.status === PersonStatus.ALIVE) || (person.relation === 'spouse' && hasSpouse)) {
+          isHeir = true;
+          const parentCount = (hasFather ? 1 : 0) + (hasMother ? 1 : 0);
+          if (person.relation === 'spouse') {
+            share = '1/2';
+            legalShare = 0.5;
+          } else {
+            legalShare = hasSpouse ? 0.5 / parentCount : 1 / parentCount;
+            share = hasSpouse ? (parentCount === 1 ? '1/2' : '1/4') : (parentCount === 1 ? '1/1' : '1/2');
+          }
+        }
+      } else if (hasSpouse && person.relation === 'spouse') {
+        isHeir = true;
+        share = '1/1';
+        legalShare = 1;
       }
 
-      livingChildren.forEach((child) => {
-        result.push({
-          ...child,
-          relation: 'child',
-          relationLabel: '子女',
-          isHeir: true,
-          share,
-          legalShare: 1 / totalHeirs,
-        });
-      });
-    }
-    // 第二順位：父母
-    else if (hasFather || hasMother) {
-      if (hasSpouse) {
-        result.push({
-          ...family.spouse,
-          relation: 'spouse',
-          relationLabel: '配偶',
-          isHeir: true,
-          share: '1/2',
-          legalShare: 0.5,
-        });
-      }
-
-      const parentCount = (hasFather ? 1 : 0) + (hasMother ? 1 : 0);
-      const parentShare = hasSpouse ? 0.5 / parentCount : 1 / parentCount;
-      const parentShareStr = hasSpouse
-        ? (parentCount === 1 ? '1/2' : '1/4')
-        : (parentCount === 1 ? '1/1' : '1/2');
-
-      if (hasFather) {
-        result.push({
-          ...family.father,
-          relation: 'parent',
-          relationLabel: '父親',
-          isHeir: true,
-          share: parentShareStr,
-          legalShare: parentShare,
-        });
-      }
-      if (hasMother) {
-        result.push({
-          ...family.mother,
-          relation: 'parent',
-          relationLabel: '母親',
-          isHeir: true,
-          share: parentShareStr,
-          legalShare: parentShare,
-        });
-      }
-    }
-    // 只有配偶
-    else if (hasSpouse) {
-      result.push({
-        ...family.spouse,
-        relation: 'spouse',
-        relationLabel: '配偶',
-        isHeir: true,
-        share: '1/1',
-        legalShare: 1,
-      });
-    }
-
-    // 加入非繼承人（用於顯示）
-    if (!hasSpouse && family.spouse.status !== PersonStatus.NONE) {
-      result.push({ ...family.spouse, relation: 'spouse', relationLabel: '配偶', isHeir: false, legalShare: 0 });
-    }
-
-    return result;
+      return { ...person, isHeir, share, legalShare };
+    });
   }, [family]);
 
   // ============ 資產處理 ============
-  const totalEstate = assets.reduce((sum, a) => sum + a.amount, 0);
-  const tax = calculateInheritanceTax(totalEstate);
+  const totalEstate = assets.reduce((sum: number, a: Asset) => sum + a.amount, 0);
+
+  // 計算總扣除額 (用於主畫面快速計算)
+  const autoDeductionAmount = useMemo(() => {
+    let total = ESTATE_TAX_EXEMPTION + DEDUCTION_FUNERAL;
+    if (family.spouse.status === PersonStatus.ALIVE) total += DEDUCTION_SPOUSE;
+    const parentCount = (family.father.status === PersonStatus.ALIVE ? 1 : 0) + (family.mother.status === PersonStatus.ALIVE ? 1 : 0);
+    total += parentCount * DEDUCTION_PARENT;
+    const childCount = family.children.filter(c => c.status === PersonStatus.ALIVE).length;
+    total += childCount * DEDUCTION_CHILD;
+    return total;
+  }, [family]);
+
+  const { tax } = calculateInheritanceTax(Math.max(0, totalEstate - autoDeductionAmount));
   const afterTaxEstate = totalEstate - tax;
 
   const handleDragStart = (e: React.DragEvent, asset: Asset) => {
@@ -400,9 +607,9 @@ export default function InheritanceVisualizer() {
     e.preventDefault();
     if (!draggedAsset) return;
 
-    // 檢查目標是否為繼承人
+    // 分配邏輯：可分配給繼承池或任何在清覽表中的人
     const targetHeir = heirs.find(h => h.id === targetLocation);
-    if (targetHeir && !targetHeir.isHeir) return; // 不能放到非繼承人
+    if (!targetHeir && targetLocation !== 'pool') return;
 
     setAssets(prev => prev.map(a =>
       a.id === draggedAsset.id ? { ...a, location: targetLocation } : a
@@ -453,10 +660,10 @@ export default function InheritanceVisualizer() {
 
   // ============ 渲染 ============
   return (
-    <div className="min-h-screen bg-[#FAF9F7] font-[sans-serif]">
+    <div className="min-h-screen bg-[#FAF9F7] font-[sans-serif] flex flex-col items-center">
       {/* Header */}
-      <header className="bg-white shadow-sm py-4 px-4 sticky top-0 z-50">
-        <div className="max-w-[1400px] mx-auto flex justify-between items-center">
+      <header className="bg-white shadow-sm py-4 w-full sticky top-0 z-50">
+        <div className="max-w-6xl mx-auto px-6 flex justify-between items-center">
           <div className="flex-grow">
             <h1 className="text-xl md:text-2xl font-bold text-[#4A3B32]">Mr. Three 保險工具箱 | 遺產分配模擬器</h1>
             <p className="text-xs md:text-sm text-[#8C7B70] hidden sm:block">輕鬆勾選，一鍵生成您的家族繼承關係與資產分配</p>
@@ -475,7 +682,7 @@ export default function InheritanceVisualizer() {
         </div>
       </header>
 
-      <main className={`mx-auto px-4 py-8 ${step === 'FAMILY' ? 'max-w-3xl' : 'max-w-6xl'}`}>
+      <main className={`w-full mx-auto px-6 py-8 ${step === 'FAMILY' ? 'max-w-3xl' : 'max-w-6xl'} flex flex-col gap-6`}>
         {step === 'FAMILY' ? (
           /* ============ Step 1: 家庭資料輸入 ============ */
           <div className="space-y-6">
@@ -683,47 +890,39 @@ export default function InheritanceVisualizer() {
               <span>返回修改家庭資料</span>
             </button>
 
+            {/* 稅務試算工具 (EstateMap 整合) */}
+            <EstateTaxPanel
+              totalEstate={totalEstate}
+              family={family}
+              onCalculatedChange={(total, tax) => {
+                setCalcTotal(total);
+                setCalcTax(tax);
+              }}
+            />
+
             {/* 總覽卡片 */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-white rounded-xl p-4 shadow-sm border border-border">
                 <div className="text-sm text-muted mb-1">遺產總額</div>
-                <div className="text-2xl font-bold text-secondary">{formatMoney(totalEstate)}</div>
+                <div className="text-2xl font-bold text-secondary">{formatMoney(calcTotal || totalEstate)}</div>
               </div>
               <div className="bg-white rounded-xl p-4 shadow-sm border border-red-100">
                 <div className="text-sm text-gray-500 mb-1">遺產稅（估算）</div>
-                <div className="text-2xl font-bold text-red-500">-{formatMoney(tax)}</div>
-              </div>
-              <div className="bg-white rounded-xl p-4 shadow-sm border border-green-100">
-                <div className="text-sm text-gray-500 mb-1">可分配金額</div>
-                <div className="text-2xl font-bold text-green-600">{formatMoney(afterTaxEstate)}</div>
+                <div className="text-2xl font-bold text-red-500">-{formatMoney(calcTax)}</div>
               </div>
             </div>
 
             {/* 繼承系統表 + 資產分配 */}
             <div className="bg-white rounded-xl p-6 shadow-sm border border-border">
-              <h2 className="text-lg font-bold text-secondary mb-4">👨👩👧👦 繼承系統表</h2>
-              <p className="text-sm text-muted mb-6">綠框為有繼承權者，將下方資產拖拉到繼承人卡片上進行分配</p>
-
-              {/* 被繼承人 */}
-              <div className="flex justify-center mb-6">
-                <div className="bg-border border-2 border-primary rounded-xl p-4 text-center">
-                  <div className="text-3xl mb-2">👤</div>
-                  <div className="font-bold text-secondary">{family.self.name}</div>
-                  <div className="text-xs text-primary">被繼承人</div>
-                </div>
+              <div className="text-center mb-6">
+                <h2 className="text-lg font-bold text-secondary mb-2">👨👩👧👦 繼承系統表</h2>
+                <p className="text-sm text-muted">綠框為有繼承權者，將下方資產拖拉到繼承人卡片上進行分配</p>
               </div>
 
-              {/* 連接線 */}
-              <div className="flex justify-center mb-4">
-                <div className="w-0.5 h-8 bg-gray-300"></div>
-              </div>
-
-              {/* 繼承人卡片 */}
-              <div className="flex flex-wrap justify-center gap-4">
-                {heirs.length === 0 ? (
-                  <div className="text-gray-400 py-8">請先設定家庭成員</div>
-                ) : (
-                  heirs.map((heir) => (
+              {/* 父母要在被繼承人的上方 */}
+              <div className="flex flex-col items-center">
+                <div className="flex flex-wrap justify-center gap-4 mb-4">
+                  {heirs.filter(h => h.relation === 'parent').map((heir) => (
                     <HeirCard
                       key={heir.id}
                       heir={heir}
@@ -735,16 +934,57 @@ export default function InheritanceVisualizer() {
                       totalEstate={afterTaxEstate}
                       isHeir={heir.isHeir}
                     />
-                  ))
+                  ))}
+                </div>
+
+                {/* 連接線 (父母到自己) */}
+                {heirs.some(h => h.relation === 'parent') && (
+                  <div className="w-0.5 h-6 bg-gray-300 mb-2"></div>
                 )}
+
+                {/* 被繼承人 */}
+                <div className="bg-amber-50 border-2 border-[#D38B3F] rounded-xl p-4 text-center min-w-[120px] mb-4">
+                  <div className="mb-2">
+                    <Icons.Person gender={family.self.gender} className="w-12 h-12 mx-auto" />
+                  </div>
+                  <div className="font-bold text-[#4A3B32] text-lg">{family.self.name}</div>
+                  <div className="text-xs text-[#D38B3F] font-bold">被繼承人</div>
+                </div>
+
+                {/* 連接線 (自己到晚輩/配偶) */}
+                <div className="w-0.5 h-8 bg-gray-300 mb-4"></div>
+
+                {/* 其他繼承人卡片 (配偶與子女) */}
+                <div className="flex flex-wrap justify-center gap-4">
+                  {heirs.filter(h => h.relation !== 'parent').length === 0 && heirs.filter(h => h.relation === 'parent').length === 0 ? (
+                    <div className="text-gray-400 py-8">請先設定家庭成員</div>
+                  ) : (
+                    heirs.filter(h => h.relation !== 'parent').map((heir) => (
+                      <HeirCard
+                        key={heir.id}
+                        heir={heir}
+                        assets={assets.filter(a => a.location === heir.id)}
+                        onDrop={handleDrop}
+                        onDragOver={handleDragOver}
+                        onDeleteAsset={handleDeleteAsset}
+                        legalShare={heir.legalShare}
+                        totalEstate={afterTaxEstate}
+                        isHeir={heir.isHeir}
+                      />
+                    ))
+                  )}
+                </div>
               </div>
             </div>
 
             {/* 資產池 */}
             <div className="bg-white rounded-xl p-6 shadow-sm border border-border">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold text-secondary">📦 資產池</h2>
-                <div className="flex flex-wrap gap-2">
+              <div className="flex flex-col md:flex-row items-center justify-between mb-4 gap-4">
+                <div className="text-center md:text-left">
+                  <h2 className="text-lg font-bold text-secondary">📦 資產池</h2>
+                  <p className="text-xs text-muted">點擊按鈕新增資產</p>
+                </div>
+                <div className="flex flex-wrap justify-center gap-2">
                   {(Object.entries(ASSET_TYPES) as [AssetType, { name: string; color: string; icon: string }][]).map(([key, type]) => (
                     <button
                       key={key}
@@ -790,7 +1030,7 @@ export default function InheritanceVisualizer() {
                           type="text"
                           value={pendingName}
                           onChange={(e) => setPendingName(e.target.value)}
-                          placeholder={`例如：${pendingType === 'property' ? '台北大安區公寓' : '台積電股票'}`}
+                          placeholder={`例如：${pendingType === 'property' ? '台北大安區公寓' : '台積電股票'} `}
                           className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#D38B3F] focus:border-transparent"
                         />
                         <p className="text-xs text-gray-400 mt-1">若不填寫將顯示預設名稱</p>
