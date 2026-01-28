@@ -26,6 +26,9 @@ interface FamilyMember {
   status: PersonStatusType;
   relation?: string;
   relationLabel?: string;
+  hasSpouse?: boolean;
+  hasChildren?: boolean;
+  childCount?: number;
 }
 
 interface Heir extends FamilyMember {
@@ -40,7 +43,7 @@ interface Family {
   father: FamilyMember;
   mother: FamilyMember;
   children: FamilyMember[];
-  siblings: unknown[];
+  siblings: FamilyMember[];
 }
 
 // ============ 工具函數 ============
@@ -86,7 +89,7 @@ const ASSET_TYPES: Record<AssetType, { name: string; color: string; icon: string
 
 const INITIAL_FAMILY: Family = {
   self: { name: '被繼承人', gender: 'male' },
-  spouse: { id: 'spouse', name: '配偶', gender: 'female', status: PersonStatus.NONE },
+  spouse: { id: 'spouse', name: '配偶', gender: 'female', status: PersonStatus.NONE, hasSpouse: false, hasChildren: false },
   father: { id: 'father', name: '父', gender: 'male', status: PersonStatus.ALIVE },
   mother: { id: 'mother', name: '母', gender: 'female', status: PersonStatus.ALIVE },
   children: [],
@@ -100,14 +103,14 @@ const Icons = {
       <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
     </svg>
   ),
-  User: () => <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>,
-  Heart: () => <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>,
-  Users: () => <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>,
-  Plus: () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>,
-  Trash: () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>,
-  Check: () => <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>,
-  ArrowRight: () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>,
-  ArrowLeft: () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 17l-5-5m0 0l5-5m-5 5h12" /></svg>,
+  User: ({ className }: { className?: string }) => <svg className={className || "w-6 h-6"} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>,
+  Heart: ({ className }: { className?: string }) => <svg className={className || "w-6 h-6"} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>,
+  Users: ({ className }: { className?: string }) => <svg className={className || "w-6 h-6"} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>,
+  Plus: ({ className }: { className?: string }) => <svg className={className || "w-5 h-5"} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>,
+  Trash: ({ className }: { className?: string }) => <svg className={className || "w-5 h-5"} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>,
+  Check: ({ className }: { className?: string }) => <svg className={className || "w-6 h-6"} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>,
+  ArrowRight: ({ className }: { className?: string }) => <svg className={className || "w-5 h-5"} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>,
+  ArrowLeft: ({ className }: { className?: string }) => <svg className={className || "w-5 h-5"} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 17l-5-5m0 0l5-5m-5 5h12" /></svg>,
 };
 
 // ============ 資產方塊元件 ============
@@ -189,7 +192,25 @@ const HeirCard: FC<HeirCardProps> = ({ heir, assets, onDrop, onDragOver, onDelet
           <Icons.Person gender={heir.gender} className="w-10 h-10" />
         </div>
         <span className="mt-2 font-semibold text-gray-700">{heir.name}</span>
-        <span className="text-xs text-gray-400">{heir.relationLabel}</span>
+        <span className="text-xs text-gray-400 mb-1">{heir.relationLabel}</span>
+
+        {/* 子女的家庭狀況顯示 */}
+        {heir.relation === 'child' && (heir.hasSpouse || heir.hasChildren) && (
+          <div className="flex gap-2 mt-1 bg-amber-50 px-2 py-1 rounded-md border border-amber-100">
+            {heir.hasSpouse && (
+              <div className="flex items-center text-xs text-gray-500" title="已婚">
+                <span className="mr-0.5 text-pink-500">I</span>
+                <span>配偶</span>
+              </div>
+            )}
+            {heir.hasChildren && (
+              <div className="flex items-center text-xs text-gray-500" title={`有子女 ${heir.childCount} 人`}>
+                <span className="mr-0.5 text-blue-500">I</span>
+                <span>{heir.childCount || 1}子</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 應繼分資訊 */}
@@ -516,6 +537,54 @@ export default function InheritanceVisualizer() {
     }));
   };
 
+  const updateChildMeta = (id: string, field: 'hasSpouse' | 'hasChildren', value: boolean) => {
+    setFamily(prev => ({
+      ...prev,
+      children: prev.children.map(c => c.id === id ? {
+        ...c,
+        [field]: value,
+        // Reset or initialize childCount when hasChildren is toggled
+        childCount: field === 'hasChildren' && value ? 1 : (field === 'hasChildren' && !value ? 0 : c.childCount)
+      } : c)
+    }));
+  };
+
+  const updateChildCount = (id: string, count: number) => {
+    setFamily(prev => ({
+      ...prev,
+      children: prev.children.map(c => c.id === id ? { ...c, childCount: Math.max(0, count) } : c)
+    }));
+  };
+
+  const addSibling = () => {
+    const newSibling: FamilyMember = {
+      id: generateId(),
+      name: `兄弟姊妹 ${family.siblings.length + 1}`,
+      gender: 'male',
+      status: PersonStatus.ALIVE,
+    };
+    setFamily(prev => ({ ...prev, siblings: [...prev.siblings, newSibling] }));
+  };
+
+  const removeSibling = (id: string) => {
+    setFamily(prev => ({ ...prev, siblings: prev.siblings.filter(s => s.id !== id) }));
+    setAssets(prev => prev.map(a => a.location === id ? { ...a, location: 'pool' } : a));
+  };
+
+  const updateSiblingName = (id: string, name: string) => {
+    setFamily(prev => ({
+      ...prev,
+      siblings: prev.siblings.map(s => s.id === id ? { ...s, name } : s)
+    }));
+  };
+
+  const updateSiblingGender = (id: string, gender: 'male' | 'female') => {
+    setFamily(prev => ({
+      ...prev,
+      siblings: prev.siblings.map(s => s.id === id ? { ...s, gender } : s)
+    }));
+  };
+
   // ============ 計算繼承人 ============
   const heirs = useMemo<Heir[]>(() => {
     // 加入所有在輸入頁中「存在」的人 (包含非繼承人)
@@ -534,12 +603,16 @@ export default function InheritanceVisualizer() {
     family.children.forEach(c => {
       allCandidates.push({ ...c, relation: 'child', relationLabel: '子女' });
     });
+    family.siblings.forEach(s => {
+      allCandidates.push({ ...s, relation: 'sibling', relationLabel: '兄弟姊妹' });
+    });
 
     // 定義合法繼承人判斷基準
     const livingChildren = family.children.filter(c => c.status === PersonStatus.ALIVE);
     const hasSpouse = family.spouse.status === PersonStatus.ALIVE;
     const hasFather = family.father.status === PersonStatus.ALIVE;
     const hasMother = family.mother.status === PersonStatus.ALIVE;
+    const livingSiblings = family.siblings.filter(s => s.status === PersonStatus.ALIVE);
 
     return allCandidates.map(person => {
       let isHeir = false;
@@ -548,13 +621,15 @@ export default function InheritanceVisualizer() {
 
       // 法律繼承順位邏輯
       if (livingChildren.length > 0) {
+        // 第一順位：直系血親卑親屬
         if ((person.relation === 'child' && person.status === PersonStatus.ALIVE) || (person.relation === 'spouse' && hasSpouse)) {
           isHeir = true;
           const totalHeirs = livingChildren.length + (hasSpouse ? 1 : 0);
-          share = `1 / ${totalHeirs} `;
+          share = `1 / ${totalHeirs}`;
           legalShare = 1 / totalHeirs;
         }
       } else if (hasFather || hasMother) {
+        // 第二順位：父母
         if ((person.relation === 'parent' && person.status === PersonStatus.ALIVE) || (person.relation === 'spouse' && hasSpouse)) {
           isHeir = true;
           const parentCount = (hasFather ? 1 : 0) + (hasMother ? 1 : 0);
@@ -564,6 +639,19 @@ export default function InheritanceVisualizer() {
           } else {
             legalShare = hasSpouse ? 0.5 / parentCount : 1 / parentCount;
             share = hasSpouse ? (parentCount === 1 ? '1/2' : '1/4') : (parentCount === 1 ? '1/1' : '1/2');
+          }
+        }
+      } else if (livingSiblings.length > 0) {
+        // 第三順位：兄弟姊妹
+        if ((person.relation === 'sibling' && person.status === PersonStatus.ALIVE) || (person.relation === 'spouse' && hasSpouse)) {
+          isHeir = true;
+          const sibCount = livingSiblings.length;
+          if (person.relation === 'spouse') {
+            share = '1/2';
+            legalShare = 0.5;
+          } else {
+            legalShare = hasSpouse ? 0.5 / sibCount : 1 / sibCount;
+            share = hasSpouse ? `1/${sibCount * 2}` : `1/${sibCount}`;
           }
         }
       } else if (hasSpouse && person.relation === 'spouse') {
@@ -826,7 +914,7 @@ export default function InheritanceVisualizer() {
                   ) : (
                     <div className="space-y-4">
                       {family.children.map((child, idx) => (
-                        <div key={child.id} className="p-4 border border-[#E5D5C5] bg-[#FFFCF9] rounded-xl">
+                        <div key={child.id} className="p-4 border border-[#E5D5C5] bg-[#FFFCF9] rounded-xl space-y-3">
                           <div className="flex items-center gap-3">
                             <span className="text-[#4A3B32] font-mono font-bold w-6 bg-[#E5D5C5] rounded-full h-6 flex items-center justify-center text-xs">{idx + 1}</span>
                             <label className="text-sm font-bold text-[#4A3B32] min-w-10">姓名:</label>
@@ -855,6 +943,112 @@ export default function InheritanceVisualizer() {
                               onClick={() => removeChild(child.id)}
                               className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
                               title="刪除此子女"
+                            >
+                              <Icons.Trash />
+                            </button>
+                          </div>
+
+                          <div className="flex flex-wrap gap-4 pl-9">
+                            <label className="flex items-center gap-2 cursor-pointer group">
+                              <div
+                                onClick={() => updateChildMeta(child.id, 'hasSpouse', !child.hasSpouse)}
+                                className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${child.hasSpouse ? 'bg-[#D38B3F] border-[#D38B3F]' : 'bg-white border-[#E5D5C5] group-hover:border-[#D38B3F]'}`}
+                              >
+                                {child.hasSpouse && <Icons.Check className="text-white w-3 h-3" />}
+                              </div>
+                              <span className="text-sm text-[#4A3B32]">是否有配偶</span>
+                            </label>
+
+                            <div className="flex items-center gap-2">
+                              <label className="flex items-center gap-2 cursor-pointer group">
+                                <div
+                                  onClick={() => updateChildMeta(child.id, 'hasChildren', !child.hasChildren)}
+                                  className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${child.hasChildren ? 'bg-[#D38B3F] border-[#D38B3F]' : 'bg-white border-[#E5D5C5] group-hover:border-[#D38B3F]'}`}
+                                >
+                                  {child.hasChildren && <Icons.Check className="text-white w-3 h-3" />}
+                                </div>
+                                <span className="text-sm text-[#4A3B32]">是否有子女</span>
+                              </label>
+
+                              {child.hasChildren && (
+                                <div className="flex items-center gap-2 ml-1 bg-amber-50 rounded-lg px-2 py-1 border border-amber-100">
+                                  <span className="text-xs text-gray-500">人數:</span>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={child.childCount || 1}
+                                    onChange={(e) => updateChildCount(child.id, parseInt(e.target.value))}
+                                    className="w-12 p-0.5 border border-[#E5D5C5] rounded text-sm text-center focus:ring-1 focus:ring-[#D38B3F] outline-none bg-white"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* 兄弟姊妹 */}
+            <div className="bg-white rounded-2xl p-8 shadow-lg border border-[#F3E5D8]">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 bg-[#FFF4E0] rounded-full flex items-center justify-center text-[#D97706]">
+                  <Icons.Users />
+                </div>
+                <div className="flex-1">
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <h3 className="text-xl font-bold text-[#4A3B32] mb-1">5. 兄弟姊妹狀況</h3>
+                      <p className="text-sm text-gray-500">若無第 1, 2 順位繼承人，此為第 3 順位</p>
+                    </div>
+                    <button
+                      onClick={addSibling}
+                      className="flex items-center space-x-2 bg-[#D38B3F] text-white px-4 py-2 rounded-lg hover:bg-[#B97A37] transition-colors shadow-sm"
+                    >
+                      <Icons.Plus />
+                      <span>新增兄弟姊妹</span>
+                    </button>
+                  </div>
+
+                  {family.siblings.length === 0 ? (
+                    <div className="text-center py-6 bg-gray-50 rounded-xl border border-dashed border-[#E5D5C5] text-gray-400">
+                      目前沒有新增兄弟姊妹資料
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {family.siblings.map((sib, idx) => (
+                        <div key={sib.id} className="p-4 border border-[#E5D5C5] bg-[#FFFCF9] rounded-xl">
+                          <div className="flex items-center gap-3">
+                            <span className="text-[#4A3B32] font-mono font-bold w-6 bg-[#E5D5C5] rounded-full h-6 flex items-center justify-center text-xs">{idx + 1}</span>
+                            <label className="text-sm font-bold text-[#4A3B32] min-w-10">姓名:</label>
+                            <input
+                              type="text"
+                              value={sib.name}
+                              onChange={(e) => updateSiblingName(sib.id, e.target.value)}
+                              placeholder="姓名"
+                              className="flex-1 p-2 border border-[#E5D5C5] bg-white text-[#4A3B32] rounded-md focus:ring-2 focus:ring-[#D38B3F] outline-none"
+                            />
+                            <div className="flex bg-white border border-[#E5D5C5] rounded-md overflow-hidden p-0.5 gap-0.5">
+                              <button
+                                onClick={() => updateSiblingGender(sib.id, 'male')}
+                                className={`px-2 py-1 text-xs rounded transition-colors ${sib.gender === 'male' ? 'bg-[#3B82F6] text-white' : 'text-gray-400 hover:bg-gray-100'}`}
+                              >
+                                男
+                              </button>
+                              <button
+                                onClick={() => updateSiblingGender(sib.id, 'female')}
+                                className={`px-2 py-1 text-xs rounded transition-colors ${sib.gender === 'female' ? 'bg-[#EF4444] text-white' : 'text-gray-400 hover:bg-gray-100'}`}
+                              >
+                                女
+                              </button>
+                            </div>
+                            <button
+                              onClick={() => removeSibling(sib.id)}
+                              className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
+                              title="刪除"
                             >
                               <Icons.Trash />
                             </button>
@@ -921,7 +1115,8 @@ export default function InheritanceVisualizer() {
 
               {/* 父母要在被繼承人的上方 */}
               <div className="flex flex-col items-center">
-                <div className="flex flex-wrap justify-center gap-4 mb-4">
+                {/* 第一層：父母 */}
+                <div className="flex flex-wrap justify-center gap-4 mb-2">
                   {heirs.filter(h => h.relation === 'parent').map((heir) => (
                     <HeirCard
                       key={heir.id}
@@ -942,24 +1137,79 @@ export default function InheritanceVisualizer() {
                   <div className="w-0.5 h-6 bg-gray-300 mb-2"></div>
                 )}
 
-                {/* 被繼承人 */}
-                <div className="bg-amber-50 border-2 border-[#D38B3F] rounded-xl p-4 text-center min-w-[120px] mb-4">
-                  <div className="mb-2">
-                    <Icons.Person gender={family.self.gender} className="w-12 h-12 mx-auto" />
+                {/* 第二層：兄弟姊妹 - 被繼承人 - 配偶 */}
+                <div className="flex items-start gap-8 mb-6 relative justify-center w-full">
+
+                  {/* 左側：兄弟姊妹 (若有) */}
+                  {heirs.some(h => h.relation === 'sibling') && (
+                    <div className="flex flex-col items-end gap-2 relative">
+                      {/* 連接線到被繼承人 */}
+                      <div className="absolute right-[-32px] top-[50px] w-8 h-0.5 bg-gray-300"></div>
+
+                      <div className="flex flex-wrap justify-end gap-4 max-w-[400px]">
+                        {heirs.filter(h => h.relation === 'sibling').map((heir) => (
+                          <HeirCard
+                            key={heir.id}
+                            heir={heir}
+                            assets={assets.filter(a => a.location === heir.id)}
+                            onDrop={handleDrop}
+                            onDragOver={handleDragOver}
+                            onDeleteAsset={handleDeleteAsset}
+                            legalShare={heir.legalShare}
+                            totalEstate={afterTaxEstate}
+                            isHeir={heir.isHeir}
+                          />
+                        ))}
+                      </div>
+                      {!heirs.some(h => h.relation === 'child') && !heirs.some(h => h.relation === 'parent') && (
+                        <div className="text-xs text-muted italic pr-2">啟動第 3 順位</div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 中間：被繼承人 */}
+                  <div className="relative z-10">
+                    <div className="bg-amber-50 border-2 border-[#D38B3F] rounded-xl p-4 text-center min-w-[140px] shadow-sm">
+                      <div className="mb-2">
+                        <Icons.Person gender={family.self.gender} className="w-12 h-12 mx-auto" />
+                      </div>
+                      <div className="font-bold text-[#4A3B32] text-lg">{family.self.name}</div>
+                      <div className="text-xs text-[#D38B3F] font-bold">被繼承人</div>
+                    </div>
                   </div>
-                  <div className="font-bold text-[#4A3B32] text-lg">{family.self.name}</div>
-                  <div className="text-xs text-[#D38B3F] font-bold">被繼承人</div>
+
+                  {/* 右側：配偶 (若有) */}
+                  {heirs.some(h => h.relation === 'spouse') && (
+                    <div className="relative">
+                      {/* 連接線到被繼承人 */}
+                      <div className="absolute left-[-32px] top-[50px] w-8 h-0.5 bg-gray-300"></div>
+
+                      {heirs.filter(h => h.relation === 'spouse').map((heir) => (
+                        <HeirCard
+                          key={heir.id}
+                          heir={heir}
+                          assets={assets.filter(a => a.location === heir.id)}
+                          onDrop={handleDrop}
+                          onDragOver={handleDragOver}
+                          onDeleteAsset={handleDeleteAsset}
+                          legalShare={heir.legalShare}
+                          totalEstate={afterTaxEstate}
+                          isHeir={heir.isHeir}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                {/* 連接線 (自己到晚輩/配偶) */}
-                <div className="w-0.5 h-8 bg-gray-300 mb-4"></div>
+                {/* 向下連接線 (給子女) */}
+                {heirs.some(h => h.relation === 'child') && (
+                  <div className="w-0.5 h-8 bg-gray-300 mb-2 -mt-4 relative z-0"></div>
+                )}
 
-                {/* 其他繼承人卡片 (配偶與子女) */}
-                <div className="flex flex-wrap justify-center gap-4">
-                  {heirs.filter(h => h.relation !== 'parent').length === 0 && heirs.filter(h => h.relation === 'parent').length === 0 ? (
-                    <div className="text-gray-400 py-8">請先設定家庭成員</div>
-                  ) : (
-                    heirs.filter(h => h.relation !== 'parent').map((heir) => (
+                {/* 第三層：子女 */}
+                {heirs.some(h => h.relation === 'child') && (
+                  <div className="flex flex-wrap justify-center gap-4 mb-8">
+                    {heirs.filter(h => h.relation === 'child').map((heir) => (
                       <HeirCard
                         key={heir.id}
                         heir={heir}
@@ -971,9 +1221,14 @@ export default function InheritanceVisualizer() {
                         totalEstate={afterTaxEstate}
                         isHeir={heir.isHeir}
                       />
-                    ))
-                  )}
-                </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 無成員提示 */}
+                {heirs.length === 0 && (
+                  <div className="text-gray-400 py-8">請先設定家庭成員</div>
+                )}
               </div>
             </div>
 
@@ -1114,8 +1369,9 @@ export default function InheritanceVisualizer() {
               </div>
             </div>
           </div>
-        )}
-      </main>
-    </div>
+        )
+        }
+      </main >
+    </div >
   );
 }
