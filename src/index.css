@@ -1,1 +1,29 @@
 @import "tailwindcss";
+
+@theme {
+    --color-primary: #D38B3F;
+    /* Amber / Action */
+    --color-background: #FAF9F7;
+    /* Creamy White */
+    --color-surface: #FFFFFF;
+    --color-secondary: #4A3B32;
+    /* Dark Brown / Text */
+    --color-muted: #8C7B70;
+    /* Gray-Brown */
+    --color-border: #F3E5D8;
+    /* Light Cream-Brown */
+    --color-success: #16A34A;
+    /* Heir Green */
+}
+
+@layer base {
+    body {
+        @apply bg-background text-secondary antialiased font-sans;
+    }
+}
+
+@layer components {
+    .card {
+        @apply bg-white border border-border rounded-xl shadow-sm;
+    }
+}
