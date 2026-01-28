@@ -312,21 +312,20 @@ const EstateTaxPanel: FC<EstateTaxPanelProps> = ({ totalEstate, family: initialF
   const [isExpanded, setIsExpanded] = useState(true); // Default expanded for usability
 
   // Local Calculator States (Manual Overrides)
-  const [localAssets, setLocalAssets] = useState<string>('');
+  // const [localAssets, setLocalAssets] = useState<string>('');
   const [localSpouse, setLocalSpouse] = useState<boolean>(initialFamily.spouse.status === PersonStatus.ALIVE);
   const [localChildren, setLocalChildren] = useState<number>(initialFamily.children.filter(c => c.status === PersonStatus.ALIVE).length);
   const [localParents, setLocalParents] = useState<number>((initialFamily.father.status === PersonStatus.ALIVE ? 1 : 0) + (initialFamily.mother.status === PersonStatus.ALIVE ? 1 : 0));
   const [localOther, setLocalOther] = useState<string>('');
 
   // Rename and update functionality: "清除數字" instead of sync
-  const handleClearClick = () => {
-    setLocalAssets('');
-    setLocalOther('');
-    // Optionally reset family counts to initial props
-    setLocalSpouse(initialFamily.spouse.status === PersonStatus.ALIVE);
-    setLocalChildren(initialFamily.children.filter(c => c.status === PersonStatus.ALIVE).length);
-    setLocalParents((initialFamily.father.status === PersonStatus.ALIVE ? 1 : 0) + (initialFamily.mother.status === PersonStatus.ALIVE ? 1 : 0));
-  };
+  // const handleClearClick = () => {
+  //   setLocalAssets('');
+  //   setLocalOther('');
+  //   setLocalSpouse(initialFamily.spouse.status === PersonStatus.ALIVE);
+  //   setLocalChildren(initialFamily.children.filter(c => c.status === PersonStatus.ALIVE).length);
+  //   setLocalParents((initialFamily.father.status === PersonStatus.ALIVE ? 1 : 0) + (initialFamily.mother.status === PersonStatus.ALIVE ? 1 : 0));
+  // };
 
   // 1. Calculate Active Values
   // const activeAssets = localAssets !== '' ? (parseFloat(localAssets) || 0) * 10000 : totalEstate;
@@ -738,6 +737,13 @@ export default function InheritanceVisualizer() {
       a.id === draggedAsset.id ? { ...a, location: targetLocation } : a
     ));
     setDraggedAsset(null);
+    setDraggedAsset(null);
+  };
+
+  const handleResetAllocation = () => {
+    if (confirm('確定要收回所有資產回到資產池嗎？')) {
+      setAssets(prev => prev.map(a => ({ ...a, location: 'pool' })));
+    }
   };
 
 
@@ -775,7 +781,15 @@ export default function InheritanceVisualizer() {
       name: pendingName.trim() || undefined
     };
 
-    setAssets(prev => [...prev, newAsset]);
+    setAssets(prev => {
+      const updated = [...prev, newAsset];
+      return updated.sort((a, b) => {
+        const typeOrder = Object.keys(ASSET_TYPES);
+        const typeDiff = typeOrder.indexOf(a.type) - typeOrder.indexOf(b.type);
+        if (typeDiff !== 0) return typeDiff;
+        return b.amount - a.amount;
+      });
+    });
     setIsModalOpen(false);
   };
 
@@ -1279,9 +1293,17 @@ export default function InheritanceVisualizer() {
             {/* 資產池 */}
             <div className="bg-white rounded-xl p-6 shadow-sm border border-border">
               <div className="flex flex-col md:flex-row items-center justify-between mb-4 gap-4">
-                <div className="text-center md:text-left">
-                  <h2 className="text-lg font-bold text-secondary">📦 資產池</h2>
-                  <p className="text-xs text-muted">點擊按鈕新增資產</p>
+                <div className="text-center md:text-left flex items-center gap-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-secondary">📦 資產池</h2>
+                    <p className="text-xs text-muted">點擊按鈕新增資產</p>
+                  </div>
+                  <button
+                    onClick={handleResetAllocation}
+                    className="px-3 py-1.5 bg-[#EF4444] text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-1 shadow-sm"
+                  >
+                    <span>↺</span> 重新分配
+                  </button>
                 </div>
                 <div className="flex flex-wrap justify-center gap-2">
                   {(Object.entries(ASSET_TYPES) as [AssetType, { name: string; color: string; icon: string }][]).map(([key, type]) => (
@@ -1360,26 +1382,33 @@ export default function InheritanceVisualizer() {
                 className="min-h-[120px] border-2 border-dashed border-gray-200 rounded-xl p-4 bg-gray-50"
               >
                 <div className="flex flex-wrap gap-3">
-                  {poolAssets.map((asset) => (
-                    <div key={asset.id} className="relative group">
-                      <AssetBlock asset={asset} onDragStart={handleDragStart} />
-                      <button
-                        onClick={() => handleDeleteAsset(asset.id)}
-                        className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full
+                  {assets.filter(a => a.location === 'pool')
+                    .sort((a, b) => {
+                      const typeOrder = Object.keys(ASSET_TYPES);
+                      const typeDiff = typeOrder.indexOf(a.type) - typeOrder.indexOf(b.type);
+                      if (typeDiff !== 0) return typeDiff;
+                      return b.amount - a.amount;
+                    })
+                    .map((asset) => (
+                      <div key={asset.id} className="relative group">
+                        <AssetBlock asset={asset} onDragStart={handleDragStart} />
+                        <button
+                          onClick={() => handleDeleteAsset(asset.id)}
+                          className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full
                           opacity-0 group-hover:opacity-100 transition-opacity text-xs leading-none flex items-center justify-center pb-0.5"
-                      >
-                        ×
-                      </button>
-                      <input
-                        type="number"
-                        value={asset.amount / 10000}
-                        onChange={(e) => handleAssetAmountChange(asset.id, (parseInt(e.target.value) || 0) * 10000)}
-                        className="absolute -bottom-7 left-0 right-0 text-xs text-center bg-white border rounded px-1 py-0.5
+                        >
+                          ×
+                        </button>
+                        <input
+                          type="number"
+                          value={asset.amount / 10000}
+                          onChange={(e) => handleAssetAmountChange(asset.id, (parseInt(e.target.value) || 0) * 10000)}
+                          className="absolute -bottom-7 left-0 right-0 text-xs text-center bg-white border rounded px-1 py-0.5
                           opacity-0 group-hover:opacity-100 transition-opacity w-full"
-                        step={10}
-                      />
-                    </div>
-                  ))}
+                          step={10}
+                        />
+                      </div>
+                    ))}
                   {poolAssets.length === 0 && (
                     <div className="w-full text-center text-gray-400 py-4">
                       所有資產已分配完畢 ✨
