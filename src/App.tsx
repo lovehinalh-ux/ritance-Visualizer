@@ -126,7 +126,7 @@ interface AssetBlockProps {
 
 const AssetBlock: FC<AssetBlockProps> = ({ asset, onDragStart, size = 'normal', showAmount = true }) => {
   const type = ASSET_TYPES[asset.type] || ASSET_TYPES.cash;
-  const blockSize = size === 'small' ? 50 : Math.max(60, Math.min(100, Math.sqrt(asset.amount / 100000) * 18));
+  const blockSize = size === 'small' ? 50 : 100;
 
   return (
     <div
