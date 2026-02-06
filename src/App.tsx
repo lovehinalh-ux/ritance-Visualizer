@@ -56,6 +56,24 @@ const formatMoney = (amount: number) => {
   }).format(amount);
 };
 
+const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+
+const formatShareRatio = (share: number) => {
+  if (share <= 0) return '0';
+
+  const tolerance = 1e-8;
+  for (let denominator = 1; denominator <= 120; denominator++) {
+    const numerator = Math.round(share * denominator);
+    if (numerator === 0) continue;
+    if (Math.abs(share - numerator / denominator) < tolerance) {
+      const divisor = gcd(Math.abs(numerator), denominator);
+      return `${numerator / divisor} / ${denominator / divisor}`;
+    }
+  }
+
+  return `${(share * 100).toFixed(2).replace(/\.?0+$/, '')}%`;
+};
+
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
 // ============ 稅額常數 (民國114年適用) ============
@@ -174,6 +192,8 @@ const HeirCard: FC<HeirCardProps> = ({ heir, assets, onDrop, onDragOver, onDragS
     .filter(a => a.location === heir.id)
     .reduce((sum, a) => sum + a.amount, 0);
   const expectedAmount = totalEstate * legalShare;
+  const reservedShare = legalShare / 2;
+  const reservedShareText = formatShareRatio(reservedShare);
   const reservedAmount = expectedAmount / 2;
   const isUnderReserved = isHeir && hasAllocationStarted && totalReceived < reservedAmount;
 
@@ -214,6 +234,8 @@ const HeirCard: FC<HeirCardProps> = ({ heir, assets, onDrop, onDragOver, onDragS
         <div className="text-center text-sm mb-3 p-2 bg-gray-50 rounded-lg">
           <div className="text-gray-500">應繼分: <span className="font-medium text-gray-700">{heir.share}</span></div>
           <div className="text-gray-400 text-xs">約 {formatMoney(expectedAmount)}</div>
+          <div className="text-amber-700 mt-1">特留分: <span className="font-medium">{reservedShareText}</span></div>
+          <div className="text-amber-600 text-xs">約 {formatMoney(reservedAmount)}</div>
         </div>
       )}
 
